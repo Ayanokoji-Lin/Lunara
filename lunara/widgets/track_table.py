@@ -18,7 +18,7 @@ from PyQt6.QtCore import (
     QTimer,
     pyqtSignal,
 )
-from PyQt6.QtGui import QColor, QPainter
+from PyQt6.QtGui import QColor, QPainter, QPainterPath
 from PyQt6.QtWidgets import (
     QAbstractItemView,
     QHeaderView,
@@ -28,6 +28,7 @@ from PyQt6.QtWidgets import (
 )
 
 from ..data import Track
+from ..services.covers import covers
 from ..theme import THEME
 from .common import font
 from .icons import pixmap
@@ -99,7 +100,8 @@ class TrackModel(QAbstractTableModel):
 
 
 class TrackDelegate(QStyledItemDelegate):
-    ROW_H = 44
+    ROW_H = 56          # 留出封面高度（38 + 上下各 9）
+    COVER = 38
 
     def __init__(self, view: QTableView):
         super().__init__(view)
@@ -124,11 +126,15 @@ class TrackDelegate(QStyledItemDelegate):
         if col == 0:
             self._paint_index(p, r, text, playing, hover)
         elif col == 1:
+            track = index.data(TRACK_ROLE)
+            text_left = fm_pad
+            if track is not None:
+                text_left = fm_pad + self._paint_cover(p, r, track)
             p.setFont(font(12, 500))
             p.setPen(QColor(THEME["primary"] if playing else THEME["text_main"]))
             elided = p.fontMetrics().elidedText(text, Qt.TextElideMode.ElideRight,
-                                                int(r.width()) - fm_pad * 2)
-            p.drawText(r.adjusted(fm_pad, 0, -fm_pad, 0),
+                                                int(r.width()) - text_left - fm_pad)
+            p.drawText(r.adjusted(text_left, 0, -fm_pad, 0),
                        int(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter),
                        elided)
         elif col in (2, 3):
@@ -146,6 +152,31 @@ class TrackDelegate(QStyledItemDelegate):
                        int(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter),
                        text)
         p.restore()
+
+    def _paint_cover(self, p: QPainter, r: QRectF, track: Track) -> int:
+        """画行内小封面，返回它占用的宽度（含间距）。"""
+        size = self.COVER
+        rect = QRectF(r.left() + 8, r.center().y() - size / 2, size, size)
+        image = covers().pixmap(track.seed, track.cover_url) if track.cover_url else None
+
+        path = QPainterPath()
+        path.addRoundedRect(rect, 6, 6)
+        p.save()
+        p.setClipPath(path)
+        if image is not None and not image.isNull():
+            scaled = image.scaled(int(size), int(size),
+                                  Qt.AspectRatioMode.KeepAspectRatioByExpanding,
+                                  Qt.TransformationMode.SmoothTransformation)
+            p.drawPixmap(rect, scaled, QRectF(scaled.rect()))
+        else:
+            # 没有图：先用色相占位，同时发起下载，到货后整行重绘
+            covers().request(track.seed, track.cover_url)
+            from ..assets import cover_pixmap
+
+            p.drawPixmap(rect, cover_pixmap(track.seed, int(size), track.hue, radius=6),
+                         QRectF(0, 0, size, size))
+        p.restore()
+        return int(size) + 10
 
     def _paint_index(self, p: QPainter, r: QRectF, text: str,
                      playing: bool, hover: bool) -> None:
@@ -223,14 +254,21 @@ class TrackTable(QTableView):
         self.clicked.connect(self._on_clicked)
         self.doubleClicked.connect(self._on_clicked)
 
+        covers().ready.connect(self._on_cover_ready)
         self._timer = QTimer(self)
         self._timer.setInterval(110)
         self._timer.timeout.connect(self._tick)
         self._sync_height()
 
     # ---- 数据 ----
+    def _on_cover_ready(self, _seed: int) -> None:
+        self.viewport().update()
+
     def set_tracks(self, tracks: list[Track]) -> None:
         self._model.set_tracks(tracks)
+        # 前 120 张先预取：滚到哪都有图，又不至于一口气打几百个请求
+        for track in tracks[:120]:
+            covers().request(track.seed, track.cover_url)
         self._sync_height()          # 行数变了必须重算高度，否则只剩表头（高度 40）
 
     def contextMenuEvent(self, event) -> None:
