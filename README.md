@@ -203,7 +203,7 @@ Lunara/
 dist/Lunara/Lunara.exe
 ```
 
-产物在 `dist/Lunara/`（约 597 MB，主要是 QtWebEngine 的 Chromium），不入库。
+产物在 `dist/Lunara/`（约 478 MB，已把 WebEngine 调试资源与多余翻译挪出包外），不入库。
 重新打包会把旧目录改名挪到 `dist/.old/`——删上千个文件太慢，也容易被打断。
 想更小可以手动排除未用的 Qt 模块，或者去掉内嵌登录。
 
