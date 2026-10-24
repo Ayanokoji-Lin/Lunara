@@ -196,6 +196,12 @@ class MainWindow(QWidget):
         self.topbar.searchSubmitted.connect(self._on_search)
         self.topbar.searchChanged.connect(self._on_search_live)
         self.topbar.btn_cog.clicked.connect(lambda: self.navigate("settings"))
+        self.topbar.accountClicked.connect(lambda: self.navigate("settings"))
+        self.topbar.notifyClicked.connect(
+            lambda: self.banner.show_message("暂时没有新通知", level="info", timeout_ms=3000))
+        self.topbar.accountClicked.connect(lambda: self.navigate("settings"))
+        self.topbar.notifyClicked.connect(
+            lambda: self.banner.show_message("暂时没有新通知", level="info", timeout_ms=3000))
         self.topbar.minimizeRequested.connect(self.showMinimized)
         self.topbar.maximizeRequested.connect(self.toggle_maximize)
         self.topbar.closeRequested.connect(self.close)
@@ -207,8 +213,11 @@ class MainWindow(QWidget):
         self.player.trialModeChanged.connect(self._on_trial_changed)
         self.player.likeChanged.connect(self._on_like_changed)
         self.playlist_page.downloadRequested.connect(self._enqueue_downloads)
+        self.playlist_page.favRequested.connect(self._on_fav_requested)
         self.download_page.finished.connect(self._on_download_finished)
         self._settings.changed.connect(self._on_setting_changed)
+        self.now_playing.set_mode(int(self._settings.get("player_view", 0)))
+        self.now_playing.set_mode(int(self._settings.get("player_view", 0)))
         self.now_playing.backRequested.connect(self.go_back)
 
         # 窗口缩放（无边框窗口需要自己挂 QSizeGrip）
@@ -477,6 +486,9 @@ class MainWindow(QWidget):
                                      timeout_ms=5000)
 
     # ================= 下载 =================
+    def _on_fav_requested(self) -> None:
+        self._show_error("收藏暂不可用：接口返回 405（操作过于频繁）")
+
     def _enqueue_downloads(self, tracks: list[Track]) -> None:
         if not tracks:
             return
@@ -510,6 +522,10 @@ class MainWindow(QWidget):
             self._downloads.set_concurrency(int(value))
         elif key == "download_dir":
             self.download_page.set_download_dir(str(value))
+        elif key == "player_view":
+            self.now_playing.set_mode(int(value))
+        elif key == "player_view":
+            self.now_playing.set_mode(int(value))
 
     # ================= 账号 =================
     def _restore_login(self) -> None:
@@ -537,6 +553,10 @@ class MainWindow(QWidget):
         self.settings_page.set_account(
             logged_in=state.logged_in, nickname=state.nickname, vip=state.vip
         )
+        self.topbar.set_account(state.nickname if state.logged_in else "",
+                                vip=state.vip)
+        self.topbar.set_account(state.nickname if state.logged_in else "",
+                                vip=state.vip)
         if state.logged_in and state.user_id:
             self._load_my_music(state.user_id)
         else:

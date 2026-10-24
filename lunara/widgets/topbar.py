@@ -2,13 +2,14 @@
 from __future__ import annotations
 
 from PyQt6.QtCore import QSize, Qt, pyqtSignal
-from PyQt6.QtGui import QPixmap
+from PyQt6.QtGui import QIcon, QPixmap
 from PyQt6.QtWidgets import (
     QFrame,
     QHBoxLayout,
     QLabel,
     QLineEdit,
     QPushButton,
+    QToolButton,
 )
 
 from ..assets import circular, cover_pixmap
@@ -22,6 +23,8 @@ class TopBar(QFrame):
     searchChanged = pyqtSignal(str)
     backClicked = pyqtSignal()
     forwardClicked = pyqtSignal()
+    accountClicked = pyqtSignal()
+    notifyClicked = pyqtSignal()
     minimizeRequested = pyqtSignal()
     maximizeRequested = pyqtSignal()
     closeRequested = pyqtSignal()
@@ -65,17 +68,20 @@ class TopBar(QFrame):
         lay.addStretch(1)
 
         # ---- 用户区 ----
-        avatar = QLabel()
-        avatar.setObjectName("Avatar")
-        avatar.setFixedSize(30, 30)
+        self.avatar = QToolButton()
+        self.avatar.setObjectName("AvatarButton")
+        self.avatar.setFixedSize(30, 30)
+        self.avatar.setCursor(Qt.CursorShape.PointingHandCursor)
         pm = cover_pixmap(77, 60, 268, radius=30)
-        pm.setDevicePixelRatio(2.0)
-        avatar.setPixmap(pm)
-        avatar.setToolTip("蝶恋")
-        lay.addWidget(avatar)
+        self.avatar.setIcon(QIcon(pm))
+        self.avatar.setIconSize(QSize(30, 30))
+        self.avatar.setToolTip("未登录 · 点击打开设置")
+        self.avatar.clicked.connect(self.accountClicked)
+        lay.addWidget(self.avatar)
         lay.addSpacing(4)
 
         self.btn_bell = IconButton("fa5s.bell", THEME["text_sub"], 15, 32, "通知")
+        self.btn_bell.clicked.connect(self.notifyClicked)
         self.btn_cog = IconButton("fa5s.cog", THEME["text_sub"], 15, 32, "设置")
         lay.addWidget(self.btn_bell)
         lay.addWidget(self.btn_cog)
@@ -121,3 +127,10 @@ class TopBar(QFrame):
     def set_maximized(self, on: bool) -> None:
         self.btn_max.set_icon_name("fa5s.window-restore" if on else "fa5s.window-maximize")
         self.btn_max.setToolTip("还原" if on else "最大化")
+
+    def set_account(self, nickname: str = "", *, vip: bool = False) -> None:
+        """头像的 tooltip 跟着登录态走（头像本身不可上传，只是占位）。"""
+        if nickname:
+            self.avatar.setToolTip(f"{nickname}{'（会员）' if vip else ''} · 点击打开设置")
+        else:
+            self.avatar.setToolTip("未登录 · 点击打开设置")

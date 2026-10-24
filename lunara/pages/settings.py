@@ -29,6 +29,13 @@ from .base import BasePage
 NAV = ("播放", "音质", "下载", "账号", "关于")
 
 
+def _disabled(widget: QWidget) -> QWidget:
+    """未实现的开关：直接置灰，别让它看起来能用。"""
+    widget.setEnabled(False)
+    widget.setToolTip("暂未实现")
+    return widget
+
+
 class SettingsPage(BasePage):
     loginRequested = pyqtSignal()
     logoutRequested = pyqtSignal()
@@ -125,13 +132,18 @@ class SettingsPage(BasePage):
                                     1 if self.settings.get("theme") == "light" else 0)
         self.cb_theme.currentIndexChanged.connect(self._on_theme_changed)
 
+        self.cb_view = self._combo(["唱片 + 歌词", "纯歌词", "纯封面"],
+                                   int(self.settings.get("player_view", 0)))
+        self.cb_view.currentIndexChanged.connect(
+            lambda i: self.settings.set("player_view", i))
+
         return self._panel([
             ("外观主题", "切换后重启应用生效", self.cb_theme),
-            ("记忆播放位置", "下次启动时从上一次的进度继续播放", Switch(True)),
-            ("淡入淡出", "切歌时做 300ms 的音量过渡", Switch(True)),
-            ("桌面歌词", "在桌面上悬浮显示当前歌词", Switch(False)),
-            ("播放页默认模式", "进入播放页时使用的展示方式",
-             self._combo(["唱片 + 歌词", "纯歌词", "纯封面"], 0)),
+            ("播放页默认模式", "进入播放页时使用的展示方式", self.cb_view),
+            ("记忆播放位置", "暂未实现：下次启动时从上次进度继续播放",
+             _disabled(Switch(False))),
+            ("淡入淡出", "暂未实现：切歌时做 300ms 的音量过渡", _disabled(Switch(False))),
+            ("桌面歌词", "暂未实现：在桌面上悬浮显示当前歌词", _disabled(Switch(False))),
         ])
 
     def _build_quality(self) -> QWidget:
@@ -150,7 +162,8 @@ class SettingsPage(BasePage):
         return self._panel([
             ("在线播放音质", "网络良好时建议选择「极高」", self.cb_play_quality),
             ("下载音质", "下载到本地时使用的音质", self.cb_download_quality),
-            ("移动网络自动降级", "检测到流量网络时自动切换到标准音质", Switch(True)),
+            ("移动网络自动降级", "暂未实现：检测到流量网络时自动降级",
+             _disabled(Switch(False))),
         ])
 
     def _build_download(self) -> QWidget:

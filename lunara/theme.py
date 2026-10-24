@@ -220,6 +220,7 @@ QPushButton#CloseBtn {
 }
 QPushButton#CloseBtn:hover { background-color: $danger; }
 QLabel#Avatar { border-radius: 14px; }
+QToolButton#AvatarButton { border: none; background: transparent; border-radius: 15px; }
 QFrame#TopBarDivider { background-color: $border_soft; }
 
 /* ===================== 内容区 / 页头 ===================== */

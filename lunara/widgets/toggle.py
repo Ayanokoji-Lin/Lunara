@@ -54,6 +54,9 @@ class Switch(QAbstractButton):
     def paintEvent(self, _e) -> None:
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        if not self.isEnabled():
+            # 未实现的开关要看得出来是灰的，否则和可用的一模一样
+            p.setOpacity(0.35)
         r = self.H / 2
         track = QRectF(0, 0, self.W, self.H)
 

@@ -23,6 +23,7 @@ from .base import BasePage
 
 class PlaylistPage(BasePage):
     downloadRequested = pyqtSignal(object)      # list[Track]
+    favRequested = pyqtSignal()                 # 收藏（接口暂不可用，交由上层提示）
 
     def __init__(self, player: Player, parent: QWidget | None = None):
         super().__init__(parent=parent)
@@ -81,6 +82,8 @@ class PlaylistPage(BasePage):
         self.btn_fav.setCheckable(True)
         self.btn_fav.setIcon(icon("fa5s.star", THEME["text_main"]))
         self.btn_fav.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_fav.clicked.connect(self._on_fav)
+        self.btn_fav.clicked.connect(self._on_fav)
 
         self.btn_dl = QPushButton("  下载")
         self.btn_dl.setObjectName("GhostPill")
@@ -139,6 +142,11 @@ class PlaylistPage(BasePage):
         self.lbl_list.hint.setText(f"共 {len(self._tracks)} 首")
         self.table.set_tracks(self._tracks)
         self.table.set_playing(self.player.current)
+
+    def _on_fav(self) -> None:
+        # 收藏接口在 eapi 下恒 405，这里不发请求，也不假装选中
+        self.btn_fav.setChecked(False)
+        self.favRequested.emit()
 
     def _play_all(self) -> None:
         if self._tracks:
