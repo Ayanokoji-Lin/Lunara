@@ -23,7 +23,8 @@ from .base import BasePage
 
 
 class PlaylistPage(BasePage):
-    downloadRequested = pyqtSignal(object)      # list[Track]
+    downloadRequested = pyqtSignal(object)
+    deleteLocalRequested = pyqtSignal(object)     # list[Track] 从磁盘删除      # list[Track]
     actionRequested = pyqtSignal(str)           # 头部额外按钮（"artist_albums" / "album_artist"）
 
     def __init__(self, player: Player, parent: QWidget | None = None):
@@ -122,6 +123,7 @@ class PlaylistPage(BasePage):
         self.body.addStretch(1)
 
         self.table.trackActivated.connect(self._play_track)
+        self.table.deleteFileRequested.connect(self.deleteLocalRequested)
         self.player.trackChanged.connect(self.table.set_playing)
 
         self.set_playlist(PLAYLISTS[0])

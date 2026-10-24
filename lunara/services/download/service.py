@@ -22,7 +22,7 @@ from pathlib import Path
 from typing import Callable, Sequence
 
 import httpx
-from PyQt6.QtCore import QObject, pyqtSignal
+from PyQt6.QtCore import QFile, QObject, pyqtSignal
 
 from ...data import DownloadTask, Track
 from ..async_bridge import BackgroundLoop, get_loop, run_sync
@@ -198,8 +198,16 @@ class DownloadService(QObject):
     def retry(self, task_id: int) -> None:
         self._loop.submit(self._resume(task_id, reset_error=True))
 
-    def delete(self, task_id: int) -> None:
-        self._loop.submit(self._delete(task_id))
+    def delete(self, task_id: int, *, delete_file: bool = False) -> None:
+        """删任务；``delete_file=True`` 时连磁盘上的音频和同名封面/歌词一起删。"""
+        self._loop.submit(self._delete(task_id, delete_file))
+
+    def delete_many(self, task_ids: Sequence[int], *, delete_file: bool = False) -> int:
+        """批量删除，返回提交的数量（异步执行）。"""
+        ids = [int(i) for i in task_ids if int(i) in self._live]
+        for task_id in ids:
+            self._loop.submit(self._delete(task_id, delete_file))
+        return len(ids)
 
     def pause_all(self) -> None:
         for task_id, task in list(self._mirror.items()):
@@ -444,7 +452,7 @@ class DownloadService(QObject):
         self._emit(task, force=True)
         await self._pump()
 
-    async def _delete(self, task_id: int) -> None:
+    async def _delete(self, task_id: int, delete_file: bool = False) -> None:
         task = self._live.pop(task_id, None)
         if task is None:
             return
@@ -454,9 +462,29 @@ class DownloadService(QObject):
             with contextlib.suppress(asyncio.CancelledError):
                 await job
         self._unlink_part(task)
+        if delete_file:
+            self._remove_files(task)
         self._rt.pop(task_id, None)
         self._store.delete(task_id)
         self.taskRemoved.emit(task_id)
+
+    @staticmethod
+    def _remove_files(task: DownloadTask) -> None:
+        """删音频 + 同名 .jpg / .lrc（D 组下载时补写的附件）。"""
+        final = Path(task.file_path)
+        targets = [final]
+        stem = final.with_suffix("")
+        for suffix in (".jpg", ".jpeg", ".png", ".lrc"):
+            targets.append(stem.with_suffix(suffix))
+        for path in targets:
+            if not path.exists():
+                continue
+            try:
+                # 先丢回收站：用户误删还能捞回来；不支持回收站的环境再直接删
+                if not QFile.moveToTrash(str(path)):
+                    path.unlink(missing_ok=True)
+            except OSError:
+                pass          # 被占用 / 无权限：跳过，不让删除流程失败
 
     async def _shutdown(self) -> None:
         self._closing = True

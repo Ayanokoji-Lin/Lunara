@@ -171,6 +171,7 @@ class TrackTable(QTableView):
     playNextRequested = pyqtSignal(object)  # 下一首播放
     queueAppendRequested = pyqtSignal(object)  # 加到队列末尾
     likeManyRequested = pyqtSignal(object)     # list[Track] 批量喜欢
+    deleteFileRequested = pyqtSignal(object)   # list[Track] 从磁盘删除（仅本地曲库）
 
     def __init__(self, tracks: list[Track] | None = None,
                  parent=None):
@@ -182,6 +183,7 @@ class TrackTable(QTableView):
         self.setItemDelegate(self._delegate)
 
         self.setShowGrid(False)
+        self._allow_file_delete = False
         self.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
         self.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.setWordWrap(False)
@@ -242,6 +244,12 @@ class TrackTable(QTableView):
         act_next = menu.addAction("下一首播放")
         act_queue = menu.addAction("加到队列末尾")
         act_like = menu.addAction(f"喜欢选中的 {len(picked)} 首" if len(picked) > 1 else "喜欢")
+        act_delete = None
+        if self._allow_file_delete:
+            menu.addSeparator()
+            label = f"从磁盘删除选中的 {len(picked)} 首" if len(picked) > 1 else "从磁盘删除"
+            act_delete = menu.addAction(label)
+
         chosen = menu.exec(event.globalPos())
         if chosen is act_next:
             self.playNextRequested.emit(track)
@@ -249,6 +257,12 @@ class TrackTable(QTableView):
             self.queueAppendRequested.emit(track)
         elif chosen is act_like:
             self.likeManyRequested.emit(picked)
+        elif act_delete is not None and chosen is act_delete:
+            self.deleteFileRequested.emit(picked)
+
+    def set_allow_file_delete(self, allowed: bool) -> None:
+        """只有「本地曲库」页才允许右键删文件。"""
+        self._allow_file_delete = bool(allowed)
 
     def set_playing(self, track: Track | None) -> None:
         self._model.set_playing(track.id if track else -1)

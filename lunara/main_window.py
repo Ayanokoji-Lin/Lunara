@@ -7,13 +7,14 @@ from pathlib import Path
 
 import httpx
 
-from PyQt6.QtCore import Qt, QTimer
+from PyQt6.QtCore import QFile, Qt, QTimer
 from PyQt6.QtGui import QColor, QIcon, QKeySequence, QShortcut
 from PyQt6.QtWidgets import (
     QApplication,
     QGraphicsDropShadowEffect,
     QHBoxLayout,
     QLineEdit,
+    QMessageBox,
     QSizeGrip,
     QSystemTrayIcon,
     QStackedWidget,
@@ -200,6 +201,8 @@ class MainWindow(QWidget):
         # 歌单页：头部「全部专辑 / 歌手」按钮、下载按钮、表格右键三项
         self.playlist_page.actionRequested.connect(self._on_page_action)
         self.playlist_page.downloadRequested.connect(self._enqueue_downloads)
+        self.playlist_page.deleteLocalRequested.connect(self._delete_local_files)
+        self.download_page.taskDeleted.connect(self._on_task_deleted)
         for table in (self.playlist_page.table, self.search_page.table):
             table.playNextRequested.connect(self._on_play_next)
             table.queueAppendRequested.connect(self._on_queue_append)
@@ -379,6 +382,8 @@ class MainWindow(QWidget):
         )
 
     def open_artist(self, artist_id: int) -> None:
+        self.playlist_page._is_local = False
+        self.playlist_page.table.set_allow_file_delete(False)
         """歌手页：复用歌单页的骨架，头像取圆形、标签写「歌手」。"""
         self._show(P_PLAYLIST)
         self._bridge.submit(
@@ -388,6 +393,8 @@ class MainWindow(QWidget):
         )
 
     def open_album(self, album_id: int) -> None:
+        self.playlist_page._is_local = False
+        self.playlist_page.table.set_allow_file_delete(False)
         """专辑页：同样复用歌单页，标签写「专辑」。"""
         self._show(P_PLAYLIST)
         self._bridge.submit(
@@ -658,16 +665,71 @@ class MainWindow(QWidget):
             self.player.set_queue(list(playlist.tracks), 0, autoplay=True)
 
     def _open_library(self) -> None:
+        self._show_local_library()
+
+    def _show_local_library(self) -> None:
         root = self._settings.download_dir
         tracks = scan(root)
         playlist = Playlist(id=0, title="本地曲库", author=root, plays=0, hue=150, tag="本地")
         self.playlist_page.set_playlist(
             playlist, tracks, title="本地曲库",
             subtitle=f"{len(tracks)} 个文件 · {root}", chip="本地")
+        self.playlist_page.table.set_allow_file_delete(True)   # 本地曲库才允许删文件
+        self.playlist_page._is_local = True
         self._show(P_PLAYLIST)
         if not tracks:
             self.banner.show_message("这个目录里没有音频文件，去设置里换个下载目录",
                                      level="info", timeout_ms=5000)
+
+    def _delete_local_files(self, tracks: list[Track]) -> None:
+        """本地曲库：把选中的文件移到回收站，并刷新列表。"""
+        if not tracks:
+            return
+        names = "\n".join(f"· {t.title}" for t in tracks[:8])
+        more = "" if len(tracks) <= 8 else f"\n… 还有 {len(tracks) - 8} 首"
+        box = QMessageBox(self)
+        box.setWindowTitle("从磁盘删除")
+        box.setIcon(QMessageBox.Icon.Warning)
+        box.setText(f"把 {len(tracks)} 个文件移到回收站？\n\n{names}{more}")
+        box.setStandardButtons(QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel)
+        box.button(QMessageBox.StandardButton.Yes).setText("移到回收站")
+        box.button(QMessageBox.StandardButton.Cancel).setText("取消")
+        box.setDefaultButton(QMessageBox.StandardButton.Cancel)
+        if box.exec() != QMessageBox.StandardButton.Yes:
+            return
+
+        removed = 0
+        for track in tracks:
+            path = Path(track.path)
+            if not path.exists():
+                continue
+            try:
+                if QFile.moveToTrash(str(path)):
+                    removed += 1
+                else:
+                    path.unlink(missing_ok=True)
+                    removed += 1
+            except OSError:
+                continue
+
+        current = self.player.current
+        if current is not None and current.path in {t.path for t in tracks}:
+            self.player.stop_source()
+        self._show_local_library()
+        self.banner.show_message(f"已删除 {removed} 个文件（在回收站里）", level="info",
+                                 timeout_ms=4000)
+
+    def _on_task_deleted(self, track: Track, deleted_file: bool) -> None:
+        """下载页删任务：正在播这首就停掉；本地曲库开着就刷新。"""
+        current = self.player.current
+        if current is not None and current.id == track.id and deleted_file:
+            self.player.stop_source()
+        if self._local_library_open():
+            self._show_local_library()
+
+    def _local_library_open(self) -> bool:
+        page = self.playlist_page
+        return bool(getattr(page, "_is_local", False))
 
     def _on_page_action(self, kind: str) -> None:
         if kind == "artist_albums" and self._current_artist_id:

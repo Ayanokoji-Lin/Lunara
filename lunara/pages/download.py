@@ -12,12 +12,14 @@ from pathlib import Path
 from PyQt6.QtCore import Qt, QUrl, pyqtSignal
 from PyQt6.QtGui import QDesktopServices
 from PyQt6.QtWidgets import (
+    QCheckBox,
     QComboBox,
     QFileDialog,
     QLineEdit,
     QFrame,
     QHBoxLayout,
     QLabel,
+    QMessageBox,
     QPushButton,
     QVBoxLayout,
     QWidget,
@@ -174,6 +176,8 @@ class DownloadPage(BasePage):
 
     #: 某个任务下载完成（主窗口据此决定要不要提示）
     finished = pyqtSignal(object)
+    #: 删掉了一个任务（可能连文件一起），主窗口据此停播 / 刷新本地曲库
+    taskDeleted = pyqtSignal(object, bool)      # (track, deleted_file)
 
     def __init__(
         self,
@@ -251,7 +255,13 @@ class DownloadPage(BasePage):
         self.btn_all.setFixedHeight(30)
         self.btn_all.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn_all.clicked.connect(self._toggle_all)
+        self.btn_clear = QPushButton("清空已完成")
+        self.btn_clear.setObjectName("GhostPill")
+        self.btn_clear.setFixedHeight(30)
+        self.btn_clear.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_clear.clicked.connect(self._clear_done)
         bh.addWidget(self.btn_all)
+        bh.addWidget(self.btn_clear)
         self.body.addWidget(bar)
 
         # ---------- 搜索 / 排序 ----------
@@ -423,13 +433,65 @@ class DownloadPage(BasePage):
         elif action == "retry":
             self.service.retry(task.id)
         elif action == "delete":
-            self.service.delete(task.id)
-        elif action == "play":
-            self._play_local(task)
+            self._delete_one(task)
         elif action == "play":
             self._play_local(task)
         elif action == "folder":
             self._open_folder(task)
+
+    # ---------------- 删除 ----------------
+    def _confirm(self, title: str, text: str, *, has_file: bool) -> tuple[bool, bool]:
+        """返回 (是否确认, 是否同时删文件)。没有文件时第二个值恒为 False。"""
+        box = QMessageBox(self)
+        box.setWindowTitle(title)
+        box.setText(text)
+        box.setIcon(QMessageBox.Icon.Warning)
+        box.setStandardButtons(QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel)
+        box.button(QMessageBox.StandardButton.Yes).setText("删除")
+        box.button(QMessageBox.StandardButton.Cancel).setText("取消")
+        box.setDefaultButton(QMessageBox.StandardButton.Cancel)
+
+        check = None
+        if has_file:
+            check = QCheckBox("同时删除本地文件（移到回收站）")
+            check.setChecked(True)
+            box.setCheckBox(check)
+
+        ok = box.exec() == QMessageBox.StandardButton.Yes
+        return ok, bool(check is not None and check.isChecked())
+
+    def _delete_one(self, task: DownloadTask) -> None:
+        exists = Path(task.file_path).exists()
+        ok, with_file = self._confirm(
+            "删除任务",
+            f"删除「{task.track.title}」？" + ("\n\n文件：\n" + task.file_path if exists else ""),
+            has_file=exists,
+        )
+        if not ok:
+            return
+        self.service.delete(task.id, delete_file=with_file)
+        self.taskDeleted.emit(task.track, with_file)
+
+    def _clear_done(self) -> None:
+        done = [t for t in self._tasks if t.state == "done"]
+        if not done:
+            self.banner_hint("没有已完成的任务")
+            return
+        ok, with_file = self._confirm(
+            "清空已完成",
+            f"清空 {len(done)} 条已完成记录？",
+            has_file=any(Path(t.file_path).exists() for t in done),
+        )
+        if not ok:
+            return
+        for task in done:
+            self.taskDeleted.emit(task.track, with_file)
+        self.service.delete_many([t.id for t in done], delete_file=with_file)
+        self.banner_hint(f"已删除 {len(done)} 条记录" + ("（含本地文件）" if with_file else ""))
+
+    def banner_hint(self, text: str) -> None:
+        """页面内的轻提示（没有全局 banner 时用它）。"""
+        self.sub.setText(text)
 
     def _play_local(self, task: DownloadTask) -> None:
         path = Path(task.file_path)
