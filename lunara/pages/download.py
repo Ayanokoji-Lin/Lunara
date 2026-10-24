@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PyQt6.QtCore import Qt, QUrl, pyqtSignal
+from PyQt6.QtCore import Qt, QTimer, QUrl, pyqtSignal
 from PyQt6.QtGui import QDesktopServices
 from PyQt6.QtWidgets import (
     QCheckBox,
@@ -26,6 +26,7 @@ from PyQt6.QtWidgets import (
 )
 
 from ..core.player import Player
+from ..widgets.anim import Coalescer
 from ..core.player import Player
 from ..data import DownloadTask, Track
 from ..services.download.naming import format_size
@@ -305,6 +306,7 @@ class DownloadPage(BasePage):
         service.taskFinished.connect(self._on_task_finished)
         service.errorRaised.connect(self._on_service_error)
 
+        self._coalescer = Coalescer(self._flush_rebuild, delay_ms=80)
         self.set_filter(0)
 
     # ---------------- 对外 ----------------
@@ -484,8 +486,8 @@ class DownloadPage(BasePage):
         )
         if not ok:
             return
-        for task in done:
-            self.taskDeleted.emit(task.track, with_file)
+        # 只发一次批量信号：逐条发会让主窗口逐条刷新本地曲库（300 次扫描）
+        self.taskDeleted.emit([t.track for t in done], with_file)
         self.service.delete_many([t.id for t in done], delete_file=with_file)
         self.banner_hint(f"已删除 {len(done)} 条记录" + ("（含本地文件）" if with_file else ""))
 
@@ -515,6 +517,15 @@ class DownloadPage(BasePage):
     # ---------------- 服务事件 ----------------
     def _on_task_added(self, task: DownloadTask) -> None:
         self._tasks = self.service.tasks()
+        self._schedule_rebuild()
+
+    def _schedule_rebuild(self) -> None:
+        """合并高频刷新：批量删除 300 条会连发 300 个 taskRemoved，
+        每次重建都要建 80 个行控件——不合并就是 O(n²)，界面直接卡死。"""
+        self._coalescer.trigger()
+
+    def _flush_rebuild(self) -> None:
+        self._tasks = self.service.tasks()
         self._rebuild()
 
     def _on_task_changed(self, event: DownloadEvent) -> None:
@@ -533,6 +544,7 @@ class DownloadPage(BasePage):
 
     def _on_task_removed(self, task_id: int) -> None:
         self._tasks = self.service.tasks()
+        self._schedule_rebuild()
         self._rebuild()
 
     def _on_task_finished(self, task: DownloadTask) -> None:

@@ -108,3 +108,26 @@ def detach(widget: QWidget) -> None:
             widget.setGraphicsEffect(None)
     except RuntimeError:
         pass
+
+
+class Coalescer:
+    """把高频触发合并成一次（默认 80ms 窗口）。
+
+    批量删除 300 条会连发 300 个信号；每条都重建列表就是 O(n²)，
+    界面直接卡死。所有「事件驱动重建」都该走这里。
+    """
+
+    def __init__(self, callback, delay_ms: int = 80) -> None:
+        self._callback = callback
+        self._delay = max(0, int(delay_ms))
+        self._pending = False
+
+    def trigger(self) -> None:
+        if self._pending:
+            return
+        self._pending = True
+        QTimer.singleShot(self._delay, self._fire)
+
+    def _fire(self) -> None:
+        self._pending = False
+        self._callback()

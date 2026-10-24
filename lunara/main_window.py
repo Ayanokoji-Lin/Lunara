@@ -719,11 +719,26 @@ class MainWindow(QWidget):
         self.banner.show_message(f"已删除 {removed} 个文件（在回收站里）", level="info",
                                  timeout_ms=4000)
 
-    def _on_task_deleted(self, track: Track, deleted_file: bool) -> None:
-        """下载页删任务：正在播这首就停掉；本地曲库开着就刷新。"""
+    def _on_task_deleted(self, payload, deleted_file: bool) -> None:
+        """下载页删任务：正在播这首就停掉；本地曲库开着就刷新（防抖）。"""
+        tracks = payload if isinstance(payload, list) else [payload]
         current = self.player.current
-        if current is not None and current.id == track.id and deleted_file:
-            self.player.stop_source()
+        if deleted_file and current is not None:
+            if current.id in {t.id for t in tracks}:
+                self.player.stop_source()
+        if self._local_library_open():
+            # 删 300 个文件要十几秒，刷新得太早会扫到还没删掉的
+            self._schedule_library_refresh(min(8000, 120 * len(tracks)))
+
+    def _schedule_library_refresh(self, delay: int = 600) -> None:
+        """批量删除时只刷新一次：每次刷新都要重新扫描整个目录。"""
+        if getattr(self, "_library_refresh_timer", None) is None:
+            self._library_refresh_timer = QTimer(self)
+            self._library_refresh_timer.setSingleShot(True)
+            self._library_refresh_timer.timeout.connect(self._refresh_library_if_open)
+        self._library_refresh_timer.start(max(200, delay))
+
+    def _refresh_library_if_open(self) -> None:
         if self._local_library_open():
             self._show_local_library()
 
