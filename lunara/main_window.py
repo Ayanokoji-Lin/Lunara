@@ -3,15 +3,19 @@ from __future__ import annotations
 
 import asyncio
 import random
+from pathlib import Path
+
+import httpx
 
 from PyQt6.QtCore import Qt, QTimer
-from PyQt6.QtGui import QColor, QKeySequence, QShortcut
+from PyQt6.QtGui import QColor, QIcon, QKeySequence, QShortcut
 from PyQt6.QtWidgets import (
     QApplication,
     QGraphicsDropShadowEffect,
     QHBoxLayout,
     QLineEdit,
     QSizeGrip,
+    QSystemTrayIcon,
     QStackedWidget,
     QVBoxLayout,
     QWidget,
@@ -217,6 +221,14 @@ class MainWindow(QWidget):
         self._sleep_timer.timeout.connect(self._on_sleep_timeout)
         self.player.volumeChanged.connect(self._remember_volume)
         QTimer.singleShot(0, self._restore_session)
+        QTimer.singleShot(1500, self._import_existing_files)
+
+        self._tray = QSystemTrayIcon(
+            QIcon(str(Path(__file__).resolve().parent.parent / "assets" / "icon.ico")), self)
+        self._tray.setToolTip("Lunara")
+        self._tray.show()
+
+        self._apply_download_limits()
 
         self._settings.changed.connect(self._on_setting_changed)
         self.now_playing.set_mode(int(self._settings.get("player_view", 0)))
@@ -689,6 +701,69 @@ class MainWindow(QWidget):
         if len(self._resume) > 200:
             self._resume = dict(list(self._resume.items())[-200:])
 
+    def _apply_download_limits(self) -> None:
+        self._downloads.set_limits(
+            retries=int(self._settings.get("dl_retries", 3)),
+            speed_kbps=int(self._settings.get("dl_speed_kbps", 0)),
+        )
+
+    def _import_existing_files(self) -> None:
+        """把下载目录里已有、但任务表没登记的文件补进来（重启后也能看到）。"""
+        try:
+            tracks = scan(self._settings.download_dir)
+        except Exception:  # noqa: BLE001 - 扫描失败不该影响启动
+            return
+        if not tracks:
+            return
+        tasks = [
+            DownloadTask(id=0, track=track, file_path=track.path, state="done",
+                         bytes_done=Path(track.path).stat().st_size,
+                         bytes_total=Path(track.path).stat().st_size)
+            for track in tracks
+        ]
+        added = self._downloads.import_done(tasks)
+        if added:
+            self.banner.show_message(f"已把 {added} 个本地文件登记进下载列表",
+                                     level="info", timeout_ms=4000)
+
+    def _notify(self, title: str, body: str) -> None:
+        if not self._settings.notify_on_complete:
+            return
+        if self._tray.isSystemTrayAvailable():
+            self._tray.showMessage(title, body, QSystemTrayIcon.MessageIcon.Information, 4000)
+
+    def _on_download_finished(self, task) -> None:
+        """下载完成后补写封面与歌词文件（同目录、同名）。"""
+        self._notify("下载完成", f"{task.track.title} — {task.track.artist}")
+        if not self._settings.get("save_sidecar", True):
+            return
+        self._bridge.submit(
+            self._write_sidecar(task),
+            on_success=lambda _: None,
+            on_error=lambda _exc: None,
+        )
+
+    async def _write_sidecar(self, task) -> None:
+        base = Path(task.file_path).with_suffix("")
+        cover_url = task.track.cover_url
+        if cover_url and not base.with_suffix(".jpg").exists():
+            try:
+                async with httpx.AsyncClient(timeout=15, follow_redirects=True) as client:
+                    response = await client.get(cover_url)
+                if response.status_code == 200:
+                    base.with_suffix(".jpg").write_bytes(response.content)
+            except (httpx.HTTPError, OSError):
+                pass
+
+        lrc = base.with_suffix(".lrc")
+        if not lrc.exists():
+            try:
+                lyric = await get_lyric(get_client(), task.track.id)
+            except Exception:  # noqa: BLE001
+                return
+            if lyric.text:
+                lrc.write_text(lyric.text, encoding="utf-8")
+
     def _restore_session(self) -> None:
         """上次退出时的音量、倍速、队列（不开播）。"""
         self.player.set_volume(int(self._settings.get("volume", self.player.volume)))
@@ -735,6 +810,69 @@ class MainWindow(QWidget):
 
     def _save_queue(self) -> None:
         queue_store.save(list(self.player.queue), self.player.index)
+
+    def _apply_download_limits(self) -> None:
+        self._downloads.set_limits(
+            retries=int(self._settings.get("dl_retries", 3)),
+            speed_kbps=int(self._settings.get("dl_speed_kbps", 0)),
+        )
+
+    def _import_existing_files(self) -> None:
+        """把下载目录里已有、但任务表没登记的文件补进来（重启后也能看到）。"""
+        try:
+            tracks = scan(self._settings.download_dir)
+        except Exception:  # noqa: BLE001 - 扫描失败不该影响启动
+            return
+        if not tracks:
+            return
+        tasks = [
+            DownloadTask(id=0, track=track, file_path=track.path, state="done",
+                         bytes_done=Path(track.path).stat().st_size,
+                         bytes_total=Path(track.path).stat().st_size)
+            for track in tracks
+        ]
+        added = self._downloads.import_done(tasks)
+        if added:
+            self.banner.show_message(f"已把 {added} 个本地文件登记进下载列表",
+                                     level="info", timeout_ms=4000)
+
+    def _notify(self, title: str, body: str) -> None:
+        if not self._settings.notify_on_complete:
+            return
+        if self._tray.isSystemTrayAvailable():
+            self._tray.showMessage(title, body, QSystemTrayIcon.MessageIcon.Information, 4000)
+
+    def _on_download_finished(self, task) -> None:
+        """下载完成后补写封面与歌词文件（同目录、同名）。"""
+        self._notify("下载完成", f"{task.track.title} — {task.track.artist}")
+        if not self._settings.get("save_sidecar", True):
+            return
+        self._bridge.submit(
+            self._write_sidecar(task),
+            on_success=lambda _: None,
+            on_error=lambda _exc: None,
+        )
+
+    async def _write_sidecar(self, task) -> None:
+        base = Path(task.file_path).with_suffix("")
+        cover_url = task.track.cover_url
+        if cover_url and not base.with_suffix(".jpg").exists():
+            try:
+                async with httpx.AsyncClient(timeout=15, follow_redirects=True) as client:
+                    response = await client.get(cover_url)
+                if response.status_code == 200:
+                    base.with_suffix(".jpg").write_bytes(response.content)
+            except (httpx.HTTPError, OSError):
+                pass
+
+        lrc = base.with_suffix(".lrc")
+        if not lrc.exists():
+            try:
+                lyric = await get_lyric(get_client(), task.track.id)
+            except Exception:  # noqa: BLE001
+                return
+            if lyric.text:
+                lrc.write_text(lyric.text, encoding="utf-8")
 
     def _restore_session(self) -> None:
         """上次退出时的音量、倍速、队列（不开播）。"""
@@ -794,10 +932,13 @@ class MainWindow(QWidget):
         if not tracks:
             return
         added = self.download_page.enqueue_tracks(list(tracks))
+        skipped = getattr(self._downloads, "last_skipped", 0)
         self.navigate("local")
-        if added:
-            self.banner.show_message(f"已加入 {added} 首下载任务", level="info",
-                                     timeout_ms=4000)
+        if added or skipped:
+            text = f"已加入 {added} 首下载任务"
+            if skipped:
+                text += f"，{skipped} 首磁盘上已有，跳过"
+            self.banner.show_message(text, level="info", timeout_ms=4000)
         else:
             self.banner.show_message("这些歌曲已经在下载列表里了", level="info",
                                      timeout_ms=4000)
@@ -831,6 +972,8 @@ class MainWindow(QWidget):
             self.player.set_rate(float(value))
         elif key == "sleep_minutes":
             self._apply_sleep(int(value))
+        elif key in ("dl_retries", "dl_speed_kbps"):
+            self._apply_download_limits()
         elif key == "play_quality":
             self._reload_current_quality()
         elif key == "fade":
@@ -839,6 +982,8 @@ class MainWindow(QWidget):
             self.player.set_rate(float(value))
         elif key == "sleep_minutes":
             self._apply_sleep(int(value))
+        elif key in ("dl_retries", "dl_speed_kbps"):
+            self._apply_download_limits()
         elif key == "play_quality":
             self._reload_current_quality()
         elif key == "player_view":
@@ -849,6 +994,8 @@ class MainWindow(QWidget):
             self.player.set_rate(float(value))
         elif key == "sleep_minutes":
             self._apply_sleep(int(value))
+        elif key in ("dl_retries", "dl_speed_kbps"):
+            self._apply_download_limits()
         elif key == "play_quality":
             self._reload_current_quality()
         elif key == "fade":
@@ -857,6 +1004,8 @@ class MainWindow(QWidget):
             self.player.set_rate(float(value))
         elif key == "sleep_minutes":
             self._apply_sleep(int(value))
+        elif key in ("dl_retries", "dl_speed_kbps"):
+            self._apply_download_limits()
         elif key == "play_quality":
             self._reload_current_quality()
 

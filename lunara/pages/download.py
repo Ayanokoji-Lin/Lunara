@@ -12,6 +12,9 @@ from pathlib import Path
 from PyQt6.QtCore import Qt, QUrl, pyqtSignal
 from PyQt6.QtGui import QDesktopServices
 from PyQt6.QtWidgets import (
+    QComboBox,
+    QFileDialog,
+    QLineEdit,
     QFrame,
     QHBoxLayout,
     QLabel,
@@ -235,6 +238,9 @@ class DownloadPage(BasePage):
         self.lbl_path = QLabel(str(settings.download_dir))
         ph.addWidget(self.lbl_path)
         path_chip.setFixedHeight(30)
+        path_chip.setCursor(Qt.CursorShape.PointingHandCursor)
+        path_chip.setToolTip("点击更换下载目录")
+        path_chip.mouseReleaseEvent = lambda e: self._choose_dir()
         bh.addWidget(path_chip)
 
         self.btn_all = QPushButton("全部暂停")
@@ -244,6 +250,27 @@ class DownloadPage(BasePage):
         self.btn_all.clicked.connect(self._toggle_all)
         bh.addWidget(self.btn_all)
         self.body.addWidget(bar)
+
+        # ---------- 搜索 / 排序 ----------
+        tools = QWidget()
+        th = QHBoxLayout(tools)
+        th.setContentsMargins(0, 0, 0, 0)
+        th.setSpacing(8)
+        self.search = QLineEdit()
+        self.search.setObjectName("SearchInput")
+        self.search.setPlaceholderText("搜索任务：歌名 / 歌手")
+        self.search.setClearButtonEnabled(True)
+        self.search.setFixedHeight(30)
+        self.search.textChanged.connect(lambda _: self._rebuild())
+        th.addWidget(self.search, 1)
+
+        self.sort_box = QComboBox()
+        self.sort_box.addItems(["最近添加", "按歌名", "按大小", "按状态"])
+        self.sort_box.setFixedWidth(120)
+        self.sort_box.setFixedHeight(30)
+        self.sort_box.currentIndexChanged.connect(lambda _: self._rebuild())
+        th.addWidget(self.sort_box)
+        self.body.addWidget(tools)
 
         # ---------- 列表 ----------
         self.panel = QFrame()
@@ -283,14 +310,39 @@ class DownloadPage(BasePage):
         self.lbl_path.setText(path)
 
     # ---------------- 过滤 / 重建 ----------------
+    def _choose_dir(self) -> None:
+        chosen = QFileDialog.getExistingDirectory(self, "选择下载目录",
+                                                  str(self.settings.download_dir))
+        if chosen:
+            self.settings.set("download_dir", chosen)
+            self.set_download_dir(chosen)
+
     def _filtered(self) -> list[DownloadTask]:
+        tasks = self._sorted()
+        keyword = self.search.text().strip().lower() if hasattr(self, "search") else ""
+        if keyword:
+            tasks = [t for t in tasks
+                     if keyword in t.track.title.lower() or keyword in t.track.artist.lower()]
         if self._filter == 0:
-            return list(self._tasks)
+            return tasks
         if self._filter == 1:
-            return [t for t in self._tasks if t.state in ("queued", "downloading", "paused")]
+            return [t for t in tasks if t.state == "downloading"]
         if self._filter == 2:
-            return [t for t in self._tasks if t.state == "done"]
-        return [t for t in self._tasks if t.state == "failed"]
+            return [t for t in tasks if t.state == "done"]
+        return [t for t in tasks if t.state in ("failed", "paused", "queued")]
+
+    def _sorted(self) -> list[DownloadTask]:
+        tasks = list(self._tasks)
+        index = self.sort_box.currentIndex() if hasattr(self, "sort_box") else 0
+        if index == 1:
+            tasks.sort(key=lambda t: t.track.title)
+        elif index == 2:
+            tasks.sort(key=lambda t: t.bytes_total, reverse=True)
+        elif index == 3:
+            tasks.sort(key=lambda t: t.state)
+        else:
+            tasks.sort(key=lambda t: t.id, reverse=True)
+        return tasks
 
     def set_filter(self, index: int) -> None:
         self._filter = index
@@ -367,14 +419,6 @@ class DownloadPage(BasePage):
             self._play_local(task)
         elif action == "folder":
             self._open_folder(task)
-
-    def _play_local(self, task: DownloadTask) -> None:
-        path = Path(task.file_path)
-        if not path.exists():
-            self.notice.show_message("文件不在了，可能被移动或删除", level="error",
-                                     timeout_ms=5000)
-            return
-        self.player.play_file(task.track, str(path))
 
     def _play_local(self, task: DownloadTask) -> None:
         path = Path(task.file_path)

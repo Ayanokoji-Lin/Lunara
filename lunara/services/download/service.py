@@ -114,6 +114,9 @@ class DownloadService(QObject):
         self._store = store
         self._dir_of = download_dir or (lambda: Path.home() / "Music" / "Lunara")
         self._limit = max(1, int(concurrency))
+        self._retries = MAX_RETRIES
+        self.last_skipped = 0
+        self._min_interval = 0.0     # 每秒最少耗时，用于限速；0 = 不限速
         self._loop = loop or get_loop()
         self._client = client
         self._owns_client = client is None
@@ -148,11 +151,21 @@ class DownloadService(QObject):
         return self.enqueue_many([track], quality=quality)
 
     def enqueue_many(self, tracks: Sequence[Track], *, quality: str | None = None) -> int:
-        """加入队列；同一首歌已在队列里就跳过。返回**实际新增**的数量。"""
+        """加入队列；已在队列里、或磁盘上已有同名文件的都跳过。返回**实际新增**的数量。"""
         known = {task.track.id for task in self._mirror.values()}
+        directory = self._dir_of()
+        on_disk: set[str] = set()
+        if directory.exists():
+            on_disk = {path.stem for path in directory.glob("*") if path.is_file()}
+
         fresh: list[Track] = []
+        self.last_skipped = 0
         for track in tracks:
             if track.id in known:
+                continue
+            stem = f"{track.artist} - {track.title}"
+            if any(name == stem or name.startswith(stem + " (") for name in on_disk):
+                self.last_skipped += 1
                 continue
             known.add(track.id)
             fresh.append(track)
@@ -160,6 +173,21 @@ class DownloadService(QObject):
             level = quality or QualityLevel.LOSSLESS.value
             self._loop.submit(self._enqueue(fresh, level))
         return len(fresh)
+
+    def import_done(self, tasks: Sequence[DownloadTask]) -> int:
+        """把磁盘上已有、任务表里没有的文件补登记成「已完成」。"""
+        known = {Path(task.file_path).name for task in self._mirror.values()}
+        added = 0
+        for task in tasks:
+            if Path(task.file_path).name in known:
+                continue
+            task_id = self._store.insert(task)
+            task.id = task_id
+            self._mirror[task_id] = task
+            self._live[task_id] = replace(task)
+            self.taskAdded.emit(replace(task))
+            added += 1
+        return added
 
     def pause(self, task_id: int) -> None:
         self._loop.submit(self._pause(task_id))
@@ -186,6 +214,16 @@ class DownloadService(QObject):
     def set_concurrency(self, limit: int) -> None:
         self._limit = max(1, int(limit))
         self._loop.submit(self._pump())
+
+    def set_limits(self, *, retries: int | None = None,
+                   speed_kbps: int | None = None) -> None:
+        """重试次数与限速（``speed_kbps <= 0`` 表示不限速）。"""
+        if retries is not None:
+            self._retries = max(0, min(10, int(retries)))
+        if speed_kbps is not None:
+            kbps = int(speed_kbps)
+            # 每块 64KB：限速 1MB/s → 每块至少 64/1024 秒
+            self._min_interval = (CHUNK_SIZE / 1024) / kbps if kbps > 0 else 0.0
 
     def shutdown(self, timeout: float = 3.0) -> None:
         try:
@@ -286,7 +324,7 @@ class DownloadService(QObject):
 
     async def _download(self, task: DownloadTask, url: str) -> None:
         """带重试的流式下载（Range 续传）。"""
-        for attempt in range(MAX_RETRIES + 1):
+        for attempt in range(self._retries + 1):
             try:
                 await self._stream_once(task, url)
                 return
@@ -300,15 +338,15 @@ class DownloadService(QObject):
                     raise DownloadError("服务器不接受断点续传，重新下载也失败了") from exc
                 return
             except _Retryable as exc:
-                if attempt >= MAX_RETRIES:
+                if attempt >= self._retries:
                     raise DownloadError(f"网络中断：{exc}") from exc
                 await asyncio.sleep(RETRY_BACKOFF[min(attempt, len(RETRY_BACKOFF) - 1)])
             except (httpx.TimeoutException, asyncio.TimeoutError) as exc:
-                if attempt >= MAX_RETRIES:
+                if attempt >= self._retries:
                     raise DownloadError("下载超时，请检查网络后重试") from exc
                 await asyncio.sleep(RETRY_BACKOFF[min(attempt, len(RETRY_BACKOFF) - 1)])
             except httpx.HTTPError as exc:
-                if attempt >= MAX_RETRIES:
+                if attempt >= self._retries:
                     raise DownloadError(f"网络中断：{exc or type(exc).__name__}") from exc
                 await asyncio.sleep(RETRY_BACKOFF[min(attempt, len(RETRY_BACKOFF) - 1)])
 
@@ -355,10 +393,16 @@ class DownloadService(QObject):
                 async for chunk in response.aiter_bytes(CHUNK_SIZE):
                     if not chunk:
                         continue
+                    if self._min_interval:
+                        started = time.monotonic()
                     handle.write(chunk)
                     written += len(chunk)
                     task.bytes_done = written
                     self._emit(task)
+                    if self._min_interval:
+                        gap = self._min_interval - (time.monotonic() - started)
+                        if gap > 0:
+                            await asyncio.sleep(gap)
                     now = time.monotonic()
                     if now - last_persist >= PERSIST_INTERVAL:
                         last_persist = now

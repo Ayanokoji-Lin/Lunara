@@ -31,6 +31,8 @@ NAV = ("播放", "音质", "下载", "账号", "关于")
 
 #: 倍速档位 / 歌词偏移档位（毫秒）/ 睡眠时长（分钟）
 RATES = (0.75, 1.0, 1.25, 1.5, 2.0)
+RETRIES = (1, 3, 5)
+SPEEDS = (0, 1024, 2048, 5120)
 SLEEP_MINUTES = (0, 15, 30, 60)
 
 
@@ -225,6 +227,16 @@ class SettingsPage(BasePage):
         self.cb_concurrency = self._combo(limits, index)
         self.cb_concurrency.currentIndexChanged.connect(
             lambda i: self.settings.set("max_concurrent_downloads", int(limits[i])))
+
+        self.cb_retries = self._combo(["1 次", "3 次", "5 次"],
+                                      _index_of(RETRIES, int(self.settings.get("dl_retries", 3))))
+        self.cb_retries.currentIndexChanged.connect(
+            lambda i: self.settings.set("dl_retries", RETRIES[i]))
+
+        self.cb_speed = self._combo(["不限速", "1 MB/s", "2 MB/s", "5 MB/s"],
+                                    _index_of(SPEEDS, int(self.settings.get("dl_speed_kbps", 0))))
+        self.cb_speed.currentIndexChanged.connect(
+            lambda i: self.settings.set("dl_speed_kbps", SPEEDS[i]))
 
         self.sw_notify = Switch(self.settings.notify_on_complete)
         self.sw_notify.toggled.connect(
