@@ -1,0 +1,94 @@
+"""接口路径集中表。
+
+每一条都带 ``verified`` 与实测日期。``verified=False`` 的条目一律带
+``// UNVERIFIED:`` 注释说明缺什么，禁止凭记忆填参数。
+
+eapi 的真实 URL = ``https://music.163.com`` + ``/eapi`` + ``path``，
+path 里必须含 ``/api`` 前缀（实测：``/eapi/api/cloudsearch/pc`` 通，
+``/eapi/cloudsearch/pc`` 回「接口未找到」）。
+"""
+from __future__ import annotations
+
+from dataclasses import dataclass
+
+
+@dataclass(frozen=True, slots=True)
+class Endpoint:
+    """一个上游接口。
+
+    Attributes:
+        path: 传给 eapi 的路径，含 ``/api`` 前缀。
+        verified: 是否已在真实上游验证通过。
+        note: 实测结论 / 缺口说明。
+    """
+
+    path: str
+    verified: bool
+    note: str = ""
+
+
+# --------------------------------------------------------------------------- #
+# 已实测（2026-10-24，匿名 Cookie，HTTP 200 + code 200）
+# --------------------------------------------------------------------------- #
+CLOUDSEARCH = Endpoint(
+    "/api/cloudsearch/pc",
+    True,
+    "type=1 返回 result.songs / result.songCount；参数 s,type,limit,offset,total",
+)
+
+SONG_URL_V1 = Endpoint(
+    "/api/song/enhance/player/url/v1",
+    True,
+    "参数 ids(JSON 字符串),level,encodeType；返回 data[0].{url,br,expi,fee,level,freeTrialInfo}",
+)
+
+ACCOUNT_STATUS = Endpoint(
+    "/api/nuser/account/get",
+    True,
+    "当前登录态：匿名时 account=null/profile=null，登录后含 account.id 与 profile.vipType",
+)
+
+USER_DETAIL = Endpoint(
+    "/api/v1/user/detail/{uid}",
+    True,
+    "用户详情：返回 level(用户等级)、profile.vipType(会员类型)、bindings 等",
+)
+
+PLAYLIST_DETAIL = Endpoint(
+    "/api/v6/playlist/detail",
+    True,
+    "参数 id,n,s；返回 playlist.{name,coverImgUrl,playCount,creator.nickname,tags,tracks[]}",
+)
+
+LYRIC = Endpoint(
+    "/api/song/lyric",
+    True,
+    "参数 id,lv,kv,tv；返回 lrc.lyric（标准 LRC 文本）/ tlyric.lyric（翻译）",
+)
+
+RECOMMEND_PLAYLISTS = Endpoint(
+    "/api/personalized/playlist",
+    True,
+    "参数 limit,total,n；返回 result[].{id,name,picUrl,playCount,copywriter,trackCount}",
+)
+
+NEW_SONGS = Endpoint(
+    "/api/personalized/newsong",
+    True,
+    "参数 limit,areaId,type；返回 result[].song（注意是长字段名 album/artists/duration）",
+)
+
+# --------------------------------------------------------------------------- #
+# 待验证（阶段③④ 逐条跑真请求确认，未确认前不写实现）
+# --------------------------------------------------------------------------- #
+UNVERIFIED: tuple[tuple[str, str], ...] = (
+    ("/api/v3/song/detail", "歌曲详情：参数 c=[{id}]，字段待实测"),
+    ("/api/v1/album/{id}", "专辑详情：是否 v1 待实测"),
+    ("/api/v1/artist/{id}", "歌手详情：是否 v1 待实测"),
+    ("/api/mv/detail", "MV 详情：路径待实测"),
+    ("/api/comment/music", "评论：分页游标语义（before/time/limit/offset）待实测"),
+    ("/api/v1/user/playlist", "用户歌单：参数 uid/limit/offset 待实测"),
+    ("/api/song/like", "喜欢的音乐：uid 参数与返回结构待实测（匿名 code=400）"),
+    ("/api/register/anonimous", "匿名 Cookie 换取：是否需要 deviceId/加密参数待实测"),
+    ("/api/login/qrcode/unikey", "扫码登录：eapi 是否支持待实测（NeteaseCloudMusicApi 用 weapi）"),
+)
