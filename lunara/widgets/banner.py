@@ -144,7 +144,8 @@ class BannerCarousel(QWidget):
 
         # 标题 / 副标题
         p.setFont(font(26, 700))
-        p.setPen(QColor(THEME["text_main"]))
+        # 轮播底图始终是深色画作，文字固定用浅色，不跟随主题
+        p.setPen(QColor("#F8FAFC"))
         p.drawText(QRectF(32, self.height() - 96, self.width() - 260, 40),
                    int(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter),
                    s["title"])

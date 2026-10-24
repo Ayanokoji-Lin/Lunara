@@ -558,3 +558,32 @@ def build_qss(theme: dict | None = None) -> str:
 
 def qss(theme: dict | None = None) -> str:
     return build_qss(theme)
+
+
+# --------------------------------------------------------------------------
+# 3. 运行时切换
+# --------------------------------------------------------------------------
+THEMES = {"dark": DARK, "light": LIGHT}
+DEFAULT_THEME = "dark"
+
+
+def apply(name: str = DEFAULT_THEME) -> dict:
+    """切换当前主题。
+
+    ``THEME`` 是同一个 dict 对象（各模块 ``from ..theme import THEME``），
+    所以原地清空再更新，所有引用方都会看到新值。**只影响之后创建的控件**，
+    切换后需要重建窗口（实际做法是重启应用）。
+    """
+    target = THEMES.get(name, DARK)
+    THEME.clear()
+    THEME.update(target)
+    return THEME
+
+
+def qcolor(token: str, alpha: int = 255):
+    """按令牌取颜色，可指定 alpha（QPainter 用）。"""
+    from PyQt6.QtGui import QColor
+
+    color = QColor(THEME.get(token, "#000000"))
+    color.setAlpha(alpha)
+    return color

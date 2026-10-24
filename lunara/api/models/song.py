@@ -44,3 +44,9 @@ class SongSearchResult(StrictModel):
 
     def __len__(self) -> int:
         return len(self.songs)
+
+
+class LikeResponse(StrictModel):
+    """``/api/song/like`` 的回包：只有 ``code`` 和 ``playlistId``。"""
+
+    playlist_id: int = Field(default=0, alias="playlistId")

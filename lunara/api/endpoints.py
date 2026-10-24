@@ -84,6 +84,12 @@ SONG_DETAIL = Endpoint(
     "参数 c=[{id}]（JSON 字符串）；返回 songs[]（短字段 al/ar/dt）与 privileges[]",
 )
 
+SONG_LIKE = Endpoint(
+    "/api/song/like",
+    True,
+    "参数 trackId,like('true'/'false'),time；返回 {code:200, playlistId}（实测 2026-10-24）",
+)
+
 USER_PLAYLIST = Endpoint(
     "/api/user/playlist",
     True,

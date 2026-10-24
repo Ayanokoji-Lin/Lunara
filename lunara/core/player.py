@@ -241,6 +241,14 @@ class Player(QObject):
         self.likeChanged.emit(track_id, liked)
         return liked
 
+    def set_liked(self, track_id: int, liked: bool) -> None:
+        """直接设置状态（同步失败回滚用），会发 ``likeChanged`` 让界面刷新。"""
+        if liked:
+            self._liked.add(track_id)
+        else:
+            self._liked.discard(track_id)
+        self.likeChanged.emit(track_id, liked)
+
     # ---------------- 直链注入 ----------------
     def _uses_media(self, track: Track | None) -> bool:
         return self._engine == ENGINE_MEDIA and bool(track and track.remote)
@@ -283,6 +291,28 @@ class Player(QObject):
         if self._media is not None:
             self._media.stop()
             self._media.setSource(QUrl())
+
+    def play_file(self, track: Track, path: str) -> None:
+        """直接播放本地文件（下载完成的任务用），不走直链解析。"""
+        if self._engine != ENGINE_MEDIA:
+            self.play_track(track)          # 没有媒体后端就退回时钟
+            return
+
+        idx = next((i for i, item in enumerate(self.queue) if item.id == track.id), -1)
+        if idx < 0:
+            self.queue.append(track)
+            idx = len(self.queue) - 1
+        self.index = idx
+        self._pos = 0
+        self._duration_ms = 0
+        self._source_track_id = track.id
+        self._trial = False
+        self.trackChanged.emit(self.current)
+
+        self._media.setSource(QUrl.fromLocalFile(path))
+        self._playing = True
+        self.playingChanged.emit(True)
+        self._media.play()
 
     def _load_current(self) -> None:
         """切歌后清掉旧音源，不请求直链（请求统一由 play() 触发，避免重复解析）。"""

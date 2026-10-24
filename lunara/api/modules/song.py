@@ -8,8 +8,9 @@ from __future__ import annotations
 import json
 
 from ..client import ApiClient
-from ..endpoints import SONG_URL_V1
+from ..endpoints import SONG_LIKE, SONG_URL_V1
 from ..models.player_url import SongUrlItem, SongUrlResponse
+from ..models.song import LikeResponse
 
 
 async def get_song_urls(
@@ -52,3 +53,25 @@ async def get_song_url(
     """取单曲直链。上游没给数据时返回 ``None``（不是错误，由编排层判定不可用）。"""
     response = await get_song_urls(client, [song_id], level, encode_type=encode_type)
     return response.first()
+
+
+async def like_song(client: ApiClient, track_id: int, liked: bool) -> int:
+    """喜欢 / 取消喜欢一首歌，返回「我喜欢的音乐」歌单 id。
+
+    实测（2026-10-24）：参数是 ``trackId`` + ``like``（字符串 ``"true"``/``"false"``）+ ``time``；
+    传 ``uid`` 会一直 400。写操作需要登录 Cookie（含 ``__csrf``）。
+
+    Raises:
+        ValueError: track_id 非法。
+    """
+    if track_id <= 0:
+        raise ValueError("track_id 必须为正整数")
+
+    response = await client.call(
+        SONG_LIKE,
+        {"trackId": track_id, "like": "true" if liked else "false", "time": 0},
+        model=LikeResponse,
+        unwrap="none",
+        cache="none",          # 写操作绝不能命中缓存
+    )
+    return response.playlist_id

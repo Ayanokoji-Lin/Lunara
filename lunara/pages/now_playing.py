@@ -25,7 +25,7 @@ from PyQt6.QtWidgets import (
 from ..assets import blurred_background
 from ..core.player import Player
 from ..data import LYRICS, Track
-from ..theme import THEME
+from ..theme import THEME, qcolor
 from ..widgets.common import IconButton, font
 from ..widgets.cover import CoverArt, ShadowBox
 from ..widgets.lyrics import LyricView
@@ -244,11 +244,11 @@ class NowPlayingPage(QWidget):
         pm = blurred_background(track.seed, w, h, track.hue, radius=64)
         p = QPainter(pm)
         p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
-        p.fillRect(pm.rect(), QColor(15, 23, 42, 138))     # 深空黑遮罩 ≈ 0.62
+        p.fillRect(pm.rect(), qcolor("bg_main", 138))     # 跟随主题的遮罩 ≈ 0.54
         g = QLinearGradient(0, 0, 0, pm.height())
-        g.setColorAt(0.0, QColor(15, 23, 42, 170))
-        g.setColorAt(0.45, QColor(15, 23, 42, 30))
-        g.setColorAt(1.0, QColor(15, 23, 42, 200))
+        g.setColorAt(0.0, qcolor("bg_main", 170))
+        g.setColorAt(0.45, qcolor("bg_main", 30))
+        g.setColorAt(1.0, qcolor("bg_main", 200))
         p.fillRect(pm.rect(), g)
         p.end()
 

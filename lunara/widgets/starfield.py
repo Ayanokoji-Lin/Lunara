@@ -8,6 +8,8 @@ from PyQt6.QtCore import QPointF, QRectF, Qt, QTimer
 from PyQt6.QtGui import QColor, QPainter, QRadialGradient
 from PyQt6.QtWidgets import QWidget
 
+from ..theme import qcolor
+
 
 class StarField(QWidget):
     """缓慢呼吸的星点 + 中央柔光；用于“纯封面”模式。"""
@@ -62,5 +64,5 @@ class StarField(QWidget):
         w, h = self.width(), self.height()
         for x, y, r, phase, speed in self._stars:
             a = 40 + 150 * (0.5 + 0.5 * math.sin(self._t * speed + phase))
-            p.setBrush(QColor(226, 232, 240, int(a)))
+            p.setBrush(qcolor("text_main", int(a)))
             p.drawEllipse(QPointF(x * w, y * h), r, r)

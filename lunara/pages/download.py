@@ -20,6 +20,8 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
+from ..core.player import Player
+from ..core.player import Player
 from ..data import DownloadTask, Track
 from ..services.download.naming import format_size
 from ..services.download.notice import NOTICE_TEXT, write_notice_file
@@ -81,12 +83,14 @@ class DownloadRow(QFrame):
         top.addWidget(self.chip, 0, Qt.AlignmentFlag.AlignVCenter)
         top.addStretch(1)
 
+        self.btn_play = IconButton("fa5s.play", THEME["text_sub"], 12, 28, "播放本地文件")
+        self.btn_play = IconButton("fa5s.play", THEME["text_sub"], 12, 28, "播放本地文件")
         self.btn_primary = IconButton("fa5s.pause", THEME["text_sub"], 12, 28, "暂停")
         self.btn_folder = IconButton("fa5s.folder-open", THEME["text_sub"], 12, 28,
                                      "打开所在文件夹")
         self.btn_delete = IconButton("fa5s.trash-alt", THEME["text_sub"], 12, 28,
                                      "删除任务（不删除已下载文件）")
-        for b in (self.btn_primary, self.btn_folder, self.btn_delete):
+        for b in (self.btn_play, self.btn_primary, self.btn_folder, self.btn_delete):
             top.addWidget(b)
         col.addLayout(top)
 
@@ -97,6 +101,8 @@ class DownloadRow(QFrame):
         col.addWidget(self.meta)
         h.addLayout(col, 1)
 
+        self.btn_play.clicked.connect(lambda: self.action.emit("play", self.task))
+        self.btn_play.clicked.connect(lambda: self.action.emit("play", self.task))
         self.btn_primary.clicked.connect(self._on_primary)
         self.btn_folder.clicked.connect(lambda: self.action.emit("folder", self.task))
         self.btn_delete.clicked.connect(lambda: self.action.emit("delete", self.task))
@@ -136,6 +142,8 @@ class DownloadRow(QFrame):
             self.btn_primary.set_icon_name("fa5s.redo")
             self.btn_primary.setToolTip("重试")
         self.btn_folder.setVisible(t.state == "done")
+        self.btn_play.setVisible(t.state == "done")
+        self.btn_play.setVisible(t.state == "done")
 
     @staticmethod
     def _meta_text(t: DownloadTask) -> str:
@@ -163,11 +171,13 @@ class DownloadPage(BasePage):
 
     def __init__(
         self,
+        player: Player,
         service: DownloadService,
         settings: SettingsStore,
         parent: QWidget | None = None,
     ):
         super().__init__(parent=parent)
+        self.player = player
         self.service = service
         self.settings = settings
         self._tasks: list[DownloadTask] = service.tasks()
@@ -351,8 +361,28 @@ class DownloadPage(BasePage):
             self.service.retry(task.id)
         elif action == "delete":
             self.service.delete(task.id)
+        elif action == "play":
+            self._play_local(task)
+        elif action == "play":
+            self._play_local(task)
         elif action == "folder":
             self._open_folder(task)
+
+    def _play_local(self, task: DownloadTask) -> None:
+        path = Path(task.file_path)
+        if not path.exists():
+            self.notice.show_message("文件不在了，可能被移动或删除", level="error",
+                                     timeout_ms=5000)
+            return
+        self.player.play_file(task.track, str(path))
+
+    def _play_local(self, task: DownloadTask) -> None:
+        path = Path(task.file_path)
+        if not path.exists():
+            self.notice.show_message("文件不在了，可能被移动或删除", level="error",
+                                     timeout_ms=5000)
+            return
+        self.player.play_file(task.track, str(path))
 
     def _open_folder(self, task: DownloadTask) -> None:
         path = Path(task.file_path)

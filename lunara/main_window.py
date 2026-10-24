@@ -19,8 +19,12 @@ from PyQt6.QtWidgets import (
 from .api import aclose_client, get_client
 from .api.core import logging as api_log
 from .api.modules.album import get_album
+from .api.modules.song import like_song
+from .api.modules.song import like_song
 from .api.modules.artist import get_artist
 from .api.modules.album import get_album
+from .api.modules.song import like_song
+from .api.modules.song import like_song
 from .api.modules.artist import get_artist
 from .api.modules.lyric import get_lyric
 from .api.modules.personalized import get_new_songs, get_recommended_playlists
@@ -80,6 +84,12 @@ SHADOW_MARGIN = 18
 
 # 页面索引
 P_HOME, P_PLAYLIST, P_SEARCH, P_SETTINGS, P_NOW, P_EMPTY, P_DOWNLOAD = range(7)
+
+#: 单曲搜索每页条数（「加载更多」按这个步进）
+SEARCH_PAGE_SIZE = 30
+
+#: 单曲搜索每页条数（「加载更多」按这个步进）
+SEARCH_PAGE_SIZE = 30
 
 EMPTY_PAGES = {
     "podcast": ("星轨播客", "订阅你喜欢的播客，让夜晚有声音陪着。", "fa5s.podcast"),
@@ -171,7 +181,7 @@ class MainWindow(QWidget):
         self.settings_page = SettingsPage(self._settings)
         self.now_playing = NowPlayingPage(self.player)
         self.empty_page = EmptyPage("星轨播客", "", "fa5s.podcast")
-        self.download_page = DownloadPage(self._downloads, self._settings)
+        self.download_page = DownloadPage(self.player, self._downloads, self._settings)
         for page in (self.home, self.playlist_page, self.search_page,
                      self.settings_page, self.now_playing, self.empty_page,
                      self.download_page):
@@ -195,6 +205,7 @@ class MainWindow(QWidget):
         self.player.urlRequested.connect(self._on_url_requested)
         self.player.errorOccurred.connect(self._on_player_error)
         self.player.trialModeChanged.connect(self._on_trial_changed)
+        self.player.likeChanged.connect(self._on_like_changed)
         self.playlist_page.downloadRequested.connect(self._enqueue_downloads)
         self.download_page.finished.connect(self._on_download_finished)
         self._settings.changed.connect(self._on_setting_changed)
@@ -217,16 +228,22 @@ class MainWindow(QWidget):
         self.search_page.playlistActivated.connect(self.open_playlist)
         self.search_page.artistActivated.connect(self.open_artist)
         self.search_page.albumActivated.connect(self.open_album)
+        self.search_page.moreRequested.connect(self._load_more)
         self.search_page.artistActivated.connect(self.open_artist)
         self.search_page.albumActivated.connect(self.open_album)
+        self.search_page.moreRequested.connect(self._load_more)
         self.player.trackChanged.connect(self._load_lyric)
         self.settings_page.loginRequested.connect(self._on_login_requested)
         self.settings_page.logoutRequested.connect(self._on_logout_requested)
+        self.settings_page.themeChanged.connect(self._on_theme_changed)
+        self.settings_page.themeChanged.connect(self._on_theme_changed)
 
         self._account = AccountStore()
         self._session: SessionService | None = None
         self._liked_id: int | None = None
         self._home_retried = False
+        self._rolling_back_like = False
+        self._search_offsets: dict[tuple[str, int], int] = {}
         self._restore_login()
 
         QTimer.singleShot(0, self._downloads.start)
@@ -435,6 +452,25 @@ class MainWindow(QWidget):
     def _on_player_error(self, message: str) -> None:
         self.banner.show_message(message, level="error", timeout_ms=6000)
 
+    def _on_like_changed(self, track_id: int, liked: bool) -> None:
+        """星标点了就同步到账号；未登录只改本地。"""
+        if self._rolling_back_like or not self._account.logged_in:
+            return
+        self._bridge.submit(
+            like_song(get_client(), track_id, liked),
+            on_success=lambda _playlist_id: None,
+            on_error=lambda exc: self._revert_like(track_id, liked, exc),
+        )
+
+    def _revert_like(self, track_id: int, liked: bool, error: BaseException) -> None:
+        self._rolling_back_like = True
+        try:
+            self.player.set_liked(track_id, not liked)
+        finally:
+            self._rolling_back_like = False
+        self._search_offsets: dict[tuple[str, int], int] = {}
+        self._show_error(f"喜欢同步失败：{error_text(error)}")
+
     def _on_trial_changed(self, trial: bool) -> None:
         if trial:
             self.banner.show_message("这首歌只提供 45 秒试听片段", level="warning",
@@ -458,6 +494,16 @@ class MainWindow(QWidget):
             return
         self.banner.show_message(f"《{task.track.title}》下载完成", level="info",
                                  timeout_ms=4000)
+
+    def _on_theme_changed(self, name: str) -> None:
+        label = "月光白" if name == "light" else "深空"
+        self.banner.show_message(f"已切换到{label}主题，重启应用后生效",
+                                 level="info", timeout_ms=5000)
+
+    def _on_theme_changed(self, name: str) -> None:
+        label = "月光白" if name == "light" else "深空"
+        self.banner.show_message(f"已切换到{label}主题，重启应用后生效",
+                                 level="info", timeout_ms=5000)
 
     def _on_setting_changed(self, key: str, value: object) -> None:
         if key == "max_concurrent_downloads":
@@ -584,6 +630,7 @@ class MainWindow(QWidget):
 
     # ================= 搜索 =================
     def _on_search(self, text: str) -> None:
+        self._search_offsets.clear()
         self.search_page.search(text)
         self._show(P_SEARCH)
         self._request_search()
@@ -601,18 +648,27 @@ class MainWindow(QWidget):
     def _request_search_for_tab(self, keyword: str, tab: int) -> None:
         self._fetch_search(keyword, tab)
 
-    def _fetch_search(self, keyword: str, tab: int) -> None:
+    def _fetch_search(self, keyword: str, tab: int, offset: int = 0) -> None:
         self._bridge.submit(
-            self._search(keyword, tab),
+            self._search(keyword, tab, offset),
             on_success=self._apply_search,
             on_error=self._on_search_error,
         )
 
-    async def _search(self, keyword: str, tab: int) -> tuple[str, SearchPayload]:
+    def _load_more(self) -> None:
+        keyword = self.search_page.query
+        if not keyword:
+            return
+        offset = self._search_offsets.get((keyword, 0), 0)
+        self._fetch_search(keyword, 0, offset)
+
+    async def _search(self, keyword: str, tab: int,
+                      offset: int = 0) -> tuple[str, int, int, SearchPayload]:
         """只打当前 Tab 对应的那一个 type，切 Tab 时再补。"""
         client = get_client()
         if tab == 0:
-            result = await search_songs(client, keyword, limit=30)
+            page = offset // SEARCH_PAGE_SIZE + 1
+            result = await search_songs(client, keyword, page=page, limit=SEARCH_PAGE_SIZE)
             payload = SearchPayload(SearchKind.SONG, tracks=tuple(to_track_list(result.songs)))
         elif tab == 1:
             result = await search_artists(client, keyword, limit=20)
@@ -629,11 +685,18 @@ class MainWindow(QWidget):
             payload = SearchPayload(
                 SearchKind.PLAYLIST, playlists=tuple(to_playlist_hit(hit) for hit in result.playlists)
             )
-        return keyword, payload
+        return keyword, tab, offset, payload
 
-    def _apply_search(self, data: tuple[str, SearchPayload]) -> None:
-        keyword, payload = data
-        self.search_page.set_results(payload, keyword)
+    def _apply_search(self, data: tuple[str, int, int, SearchPayload]) -> None:
+        keyword, tab, offset, payload = data
+        if offset > 0 and payload.kind is SearchKind.SONG:
+            self.search_page.append_tracks(list(payload.tracks), keyword)
+        else:
+            self.search_page.set_results(payload, keyword)
+
+        if payload.kind is SearchKind.SONG:
+            self._search_offsets[(keyword, tab)] = offset + len(payload.tracks)
+            self.search_page.set_has_more(len(payload.tracks) >= SEARCH_PAGE_SIZE)
 
     def _on_search_error(self, error: BaseException) -> None:
         api_log.get_logger().warning("搜索未返回真实结果，沿用本地过滤：%s", error)

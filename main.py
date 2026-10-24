@@ -12,6 +12,8 @@ from PyQt6.QtGui import QFont
 from PyQt6.QtWidgets import QApplication
 
 from lunara.main_window import MainWindow
+from lunara.services.settings_store import SettingsStore
+from lunara.theme import apply as apply_theme
 from lunara.theme import qss
 
 
@@ -45,6 +47,9 @@ def main() -> int:
     app.setApplicationName("Lunara")
     app.setApplicationDisplayName("Lunara")
     app.setStyle("Fusion")          # Fusion 才能让 QSS 完全接管控件外观
+
+    # 主题在窗口创建前生效：页面里不少颜色是在构造时写进内联样式的
+    apply_theme(str(SettingsStore().get("theme", "dark")))
     app.setStyleSheet(qss())
 
     f = QFont()

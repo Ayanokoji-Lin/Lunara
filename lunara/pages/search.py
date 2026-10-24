@@ -48,6 +48,7 @@ class SearchPage(BasePage):
     playlistActivated = pyqtSignal(int)
     artistActivated = pyqtSignal(int)
     albumActivated = pyqtSignal(int)
+    moreRequested = pyqtSignal()      # 单曲列表「加载更多」
 
     def __init__(self, player: Player, parent: QWidget | None = None):
         super().__init__(parent=parent)
@@ -59,6 +60,7 @@ class SearchPage(BasePage):
         self._albums: list[CardItem] = []
         self._lists: list[Playlist] = []
         self._remote: set[tuple[str, int]] = set()   # 已拿到真实结果的 (关键词, tab)
+        self._has_more = False
 
         self.add_page_header("搜索", "在星海里打捞你想听的声音")
 
@@ -94,6 +96,15 @@ class SearchPage(BasePage):
         tpv.setContentsMargins(14, 8, 14, 12)
         tpv.setSpacing(0)
         tpv.addWidget(self.table)
+
+        self.btn_more = QPushButton("加载更多")
+        self.btn_more.setObjectName("GhostPill")
+        self.btn_more.setFixedHeight(32)
+        self.btn_more.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_more.setVisible(False)
+        self.btn_more.clicked.connect(self._request_more)
+        tpv.addWidget(self.btn_more, 0, Qt.AlignmentFlag.AlignHCenter)
+
         self.body.addWidget(self._table_panel)
 
         self.grid_host = QWidget()
@@ -122,6 +133,33 @@ class SearchPage(BasePage):
     def tab(self) -> int:
         return self._tab
 
+    def append_tracks(self, tracks: list[Track], keyword: str) -> None:
+        """追加一页单曲结果（按 id 去重）。"""
+        if keyword.strip() != self._query:
+            return
+        known = {track.id for track in self._tracks}
+        fresh = [track for track in tracks if track.id not in known]
+        if fresh:
+            self._tracks.extend(fresh)
+            self.table.set_tracks(self._tracks)
+        self.set_loading_more(False)
+
+    def set_has_more(self, has_more: bool) -> None:
+        self._has_more = bool(has_more)
+        self._refresh_more()
+
+    def set_loading_more(self, loading: bool) -> None:
+        self.btn_more.setEnabled(not loading)
+        self.btn_more.setText("加载中…" if loading else "加载更多")
+
+    def _request_more(self) -> None:
+        self.set_loading_more(True)
+        self.moreRequested.emit()
+
+    def _refresh_more(self) -> None:
+        visible = self._tab == 0 and bool(self._tracks) and self._has_more
+        self.btn_more.setVisible(visible)
+
     def set_results(self, payload: SearchPayload, keyword: str) -> None:
         """接收真实搜索结果；关键词已变则丢弃（防止慢请求盖掉新结果）。"""
         if keyword.strip() != self._query:
@@ -141,6 +179,8 @@ class SearchPage(BasePage):
             self._lists = list(payload.playlists)
 
         self._remote.add((keyword, tab))
+        if payload.kind is SearchKind.SONG:
+            self.set_loading_more(False)
         if self._tab == tab:
             self._refresh()
 
@@ -150,6 +190,7 @@ class SearchPage(BasePage):
         for i, b in enumerate(self._tab_btns):
             b.setChecked(i == index)
         self._refresh()
+        self._refresh_more()
         if self._query and (self._query, index) not in self._remote:
             self.resultsRequested.emit(self._query, index)
 

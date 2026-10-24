@@ -32,6 +32,7 @@ NAV = ("播放", "音质", "下载", "账号", "关于")
 class SettingsPage(BasePage):
     loginRequested = pyqtSignal()
     logoutRequested = pyqtSignal()
+    themeChanged = pyqtSignal(str)
 
     def __init__(self, settings: SettingsStore | None = None,
                  parent: QWidget | None = None):
@@ -120,7 +121,12 @@ class SettingsPage(BasePage):
 
     # ---------------- 面板 ----------------
     def _build_play(self) -> QWidget:
+        self.cb_theme = self._combo(["深空", "月光白"],
+                                    1 if self.settings.get("theme") == "light" else 0)
+        self.cb_theme.currentIndexChanged.connect(self._on_theme_changed)
+
         return self._panel([
+            ("外观主题", "切换后重启应用生效", self.cb_theme),
             ("记忆播放位置", "下次启动时从上一次的进度继续播放", Switch(True)),
             ("淡入淡出", "切歌时做 300ms 的音量过渡", Switch(True)),
             ("桌面歌词", "在桌面上悬浮显示当前歌词", Switch(False)),
@@ -183,6 +189,11 @@ class SettingsPage(BasePage):
             ("同时下载数量", "数量越多越占用带宽", self.cb_concurrency),
             ("下载完成后提示", "在右下角弹出通知", self.sw_notify),
         ])
+
+    def _on_theme_changed(self, index: int) -> None:
+        name = "light" if index == 1 else "dark"
+        self.settings.set("theme", name)
+        self.themeChanged.emit(name)
 
     def _choose_download_dir(self) -> None:
         path = QFileDialog.getExistingDirectory(
