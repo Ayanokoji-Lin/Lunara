@@ -120,20 +120,13 @@ class SearchPage(BasePage):
         self.empty.setFixedHeight(120)
         self.body.addWidget(self.empty)
 
+        self._history: list[str] = []
         self._suggest = QWidget()
-        sl = QHBoxLayout(self._suggest)
-        sl.setContentsMargins(0, 0, 0, 0)
-        sl.setSpacing(10)
-        sl.addStretch(1)
-        for word in ("周杰伦", "华语", "纯音乐", "深夜"):
-            b = QPushButton(word)
-            b.setObjectName("GhostPill")
-            b.setFixedHeight(30)
-            b.setCursor(Qt.CursorShape.PointingHandCursor)
-            b.clicked.connect(lambda _=False, w=word: self.suggestRequested.emit(w))
-            sl.addWidget(b)
-        sl.addStretch(1)
+        self._suggest_layout = QHBoxLayout(self._suggest)
+        self._suggest_layout.setContentsMargins(0, 0, 0, 0)
+        self._suggest_layout.setSpacing(10)
         self.body.addWidget(self._suggest)
+        self._rebuild_suggest()
 
         self.body.addStretch(1)
         self.player.trackChanged.connect(self.table.set_playing)
@@ -160,6 +153,48 @@ class SearchPage(BasePage):
             self.table.set_tracks(self._tracks)
         self.set_loading_more(False)
 
+    def append_results(self, payload: SearchPayload, keyword: str) -> None:
+        """非单曲 Tab 的追加（按 seed 去重）。"""
+        if keyword.strip() != self._query:
+            return
+        if payload.kind is SearchKind.ARTIST:
+            known = {item.seed for item in self._artists}
+            self._artists.extend(item for item in payload.cards if item.seed not in known)
+        elif payload.kind is SearchKind.ALBUM:
+            known = {item.seed for item in self._albums}
+            self._albums.extend(item for item in payload.cards if item.seed not in known)
+        else:
+            known = {item.seed for item in self._lists}
+            self._lists.extend(item for item in payload.playlists if item.seed not in known)
+        self._rebuild_grid()
+        self.set_loading_more(False)
+
+    def set_history(self, words: list[str]) -> None:
+        """最近搜过的词，空关键词时和推荐词一起显示。"""
+        self._history = list(words)
+        self._rebuild_suggest()
+
+    def _rebuild_suggest(self) -> None:
+        while self._suggest_layout.count():
+            item = self._suggest_layout.takeAt(0)
+            widget = item.widget()
+            if widget is not None:
+                widget.deleteLater()
+        self._suggest_layout.addStretch(1)
+        for word in list(self._history)[:4]:
+            self._suggest_layout.addWidget(self._make_chip(f"↻ {word}", word))
+        for word in ("周杰伦", "华语", "纯音乐", "深夜"):
+            self._suggest_layout.addWidget(self._make_chip(word, word))
+        self._suggest_layout.addStretch(1)
+
+    def _make_chip(self, label: str, word: str) -> QPushButton:
+        button = QPushButton(label)
+        button.setObjectName("GhostPill")
+        button.setFixedHeight(30)
+        button.setCursor(Qt.CursorShape.PointingHandCursor)
+        button.clicked.connect(lambda _=False, w=word: self.suggestRequested.emit(w))
+        return button
+
     def set_has_more(self, has_more: bool) -> None:
         self._has_more = bool(has_more)
         self._refresh_more()
@@ -173,8 +208,8 @@ class SearchPage(BasePage):
         self.moreRequested.emit()
 
     def _refresh_more(self) -> None:
-        visible = self._tab == 0 and bool(self._tracks) and self._has_more
-        self.btn_more.setVisible(visible)
+        has_content = bool(self._tracks) if self._tab == 0 else bool(self._grid_items())
+        self.btn_more.setVisible(has_content and self._has_more)
 
     def set_results(self, payload: SearchPayload, keyword: str) -> None:
         """接收真实搜索结果；关键词已变则丢弃（防止慢请求盖掉新结果）。"""
@@ -242,6 +277,9 @@ class SearchPage(BasePage):
         self._refresh()
 
     # ---------------- 视图切换 ----------------
+    def _grid_items(self) -> list:
+        return {1: self._artists, 2: self._albums, 3: self._lists}.get(self._tab, [])
+
     def _has_content(self) -> bool:
         return {
             0: bool(self._tracks),

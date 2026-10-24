@@ -170,6 +170,7 @@ class TrackTable(QTableView):
     trackActivated = pyqtSignal(object)     # Track
     playNextRequested = pyqtSignal(object)  # 下一首播放
     queueAppendRequested = pyqtSignal(object)  # 加到队列末尾
+    likeManyRequested = pyqtSignal(object)     # list[Track] 批量喜欢
 
     def __init__(self, tracks: list[Track] | None = None,
                  parent=None):
@@ -181,6 +182,8 @@ class TrackTable(QTableView):
         self.setItemDelegate(self._delegate)
 
         self.setShowGrid(False)
+        self.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
+        self.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.setWordWrap(False)
         self.setFrameShape(QTableView.Shape.NoFrame)
         self.setSelectionMode(QAbstractItemView.SelectionMode.NoSelection)
@@ -229,14 +232,22 @@ class TrackTable(QTableView):
         if track is None:
             return
 
+        rows = sorted({i.row() for i in self.selectionModel().selectedRows()})
+        if index.row() not in rows:
+            rows = [index.row()]
+        picked = [t for t in (self._model.track_at(r) for r in rows) if t is not None]
+
         menu = QMenu(self)
         act_next = menu.addAction("下一首播放")
         act_queue = menu.addAction("加到队列末尾")
+        act_like = menu.addAction(f"喜欢选中的 {len(picked)} 首" if len(picked) > 1 else "喜欢")
         chosen = menu.exec(event.globalPos())
         if chosen is act_next:
             self.playNextRequested.emit(track)
         elif chosen is act_queue:
             self.queueAppendRequested.emit(track)
+        elif chosen is act_like:
+            self.likeManyRequested.emit(picked)
         self._sync_height()
 
     def set_playing(self, track: Track | None) -> None:

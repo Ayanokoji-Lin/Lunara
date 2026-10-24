@@ -221,6 +221,7 @@ class MainWindow(QWidget):
         self._sleep_timer.timeout.connect(self._on_sleep_timeout)
         self.player.volumeChanged.connect(self._remember_volume)
         QTimer.singleShot(0, self._restore_session)
+        self.search_page.set_history(list(self._settings.get("search_history") or []))
         QTimer.singleShot(1500, self._import_existing_files)
 
         self._tray = QSystemTrayIcon(
@@ -271,6 +272,8 @@ class MainWindow(QWidget):
         self._more_tracks: list[Track] = []
         self._recent = RecentStore()
         self._current_artist_id = 0
+        self._liked_ids: set[int] = set()
+        self._logged_in = False
         self._album_artist_id = 0
         self._resume: dict[str, int] = dict(self._settings.get("resume_positions") or {})
         self._resume_dirty = False
@@ -495,7 +498,7 @@ class MainWindow(QWidget):
 
     def _on_like_changed(self, track_id: int, liked: bool) -> None:
         """星标点了就同步到账号；未登录只改本地。"""
-        if self._rolling_back_like or not self._account.logged_in:
+        if self._rolling_back_like or not self._logged_in:
             return
         self._bridge.submit(
             like_song(get_client(), track_id, liked),
@@ -686,6 +689,8 @@ class MainWindow(QWidget):
         self._save_queue()
         if not self._settings.get("memory_position", True):
             return
+        if self._liked_ids:
+            self.player.mark_liked(track.id, track.id in self._liked_ids)
         saved = self._resume.get(str(track.id), 0)
         if saved > 3000:
             self.player.set_resume_position(saved)
@@ -790,6 +795,28 @@ class MainWindow(QWidget):
     def _on_play_next(self, track: Track) -> None:
         self.player.insert_next(track)
         self.banner.show_message(f"下一首播放：{track.title}", level="info", timeout_ms=3000)
+
+    def _on_like_many(self, tracks: list[Track]) -> None:
+        if not tracks:
+            return
+        self._bridge.submit(
+            self._like_many(tracks),
+            on_success=lambda n: self.banner.show_message(
+                f"已喜欢 {n} 首", level="info", timeout_ms=3000),
+            on_error=lambda exc: self._show_error(f"批量喜欢失败：{error_text(exc)}"),
+        )
+
+    async def _like_many(self, tracks: list[Track]) -> int:
+        client = get_client()
+        done = 0
+        for track in tracks:
+            try:
+                await like_song(client, track.id, True)
+            except Exception:  # noqa: BLE001 - 单首失败不影响其余
+                continue
+            self._liked_ids.add(track.id)
+            done += 1
+        return done
 
     def _on_queue_append(self, track: Track) -> None:
         self.player.queue.append(track)
@@ -900,6 +927,28 @@ class MainWindow(QWidget):
     def _on_play_next(self, track: Track) -> None:
         self.player.insert_next(track)
         self.banner.show_message(f"下一首播放：{track.title}", level="info", timeout_ms=3000)
+
+    def _on_like_many(self, tracks: list[Track]) -> None:
+        if not tracks:
+            return
+        self._bridge.submit(
+            self._like_many(tracks),
+            on_success=lambda n: self.banner.show_message(
+                f"已喜欢 {n} 首", level="info", timeout_ms=3000),
+            on_error=lambda exc: self._show_error(f"批量喜欢失败：{error_text(exc)}"),
+        )
+
+    async def _like_many(self, tracks: list[Track]) -> int:
+        client = get_client()
+        done = 0
+        for track in tracks:
+            try:
+                await like_song(client, track.id, True)
+            except Exception:  # noqa: BLE001 - 单首失败不影响其余
+                continue
+            self._liked_ids.add(track.id)
+            done += 1
+        return done
 
     def _on_queue_append(self, track: Track) -> None:
         self.player.queue.append(track)
@@ -1032,18 +1081,63 @@ class MainWindow(QWidget):
         return await self._session.state(force=True)
 
     def _on_account_state(self, state: SessionState) -> None:
+        self._logged_in = state.logged_in
         self.settings_page.set_account(
             logged_in=state.logged_in, nickname=state.nickname, vip=state.vip
         )
         self.topbar.set_account(state.nickname if state.logged_in else "",
                                 vip=state.vip)
+        if state.logged_in and state.avatar_url:
+            self._bridge.submit(
+                self._fetch_avatar(state.avatar_url),
+                on_success=self.topbar.set_avatar,
+                on_error=lambda _exc: None,
+            )
+        else:
+            self.topbar.set_avatar(None)
         self.topbar.set_account(state.nickname if state.logged_in else "",
                                 vip=state.vip)
+        if state.logged_in and state.avatar_url:
+            self._bridge.submit(
+                self._fetch_avatar(state.avatar_url),
+                on_success=self.topbar.set_avatar,
+                on_error=lambda _exc: None,
+            )
+        else:
+            self.topbar.set_avatar(None)
         if state.logged_in and state.user_id:
             self._load_my_music(state.user_id)
         else:
             self._liked_id = None
             self.sidebar.set_my_playlists([], [])
+
+    def _prefetch_liked_ids(self) -> None:
+        if not self._liked_id:
+            return
+        self._bridge.submit(
+            self._fetch_liked_ids(self._liked_id),
+            on_success=self._apply_liked_ids,
+            on_error=lambda _exc: None,
+        )
+
+    async def _fetch_liked_ids(self, playlist_id: int) -> set[int]:
+        detail = await get_playlist_detail(get_client(), playlist_id)
+        return {song.id for song in detail.tracks}
+
+    def _apply_liked_ids(self, ids: set[int]) -> None:
+        self._liked_ids = set(ids)
+        current = self.player.current
+        if current is not None:
+            self.player.mark_liked(current.id, current.id in self._liked_ids)
+
+    async def _fetch_avatar(self, url: str):
+        from PyQt6.QtGui import QPixmap
+
+        async with httpx.AsyncClient(timeout=10, follow_redirects=True) as client:
+            response = await client.get(url)
+        pixmap = QPixmap()
+        pixmap.loadFromData(response.content)
+        return pixmap
 
     def _load_my_music(self, uid: int) -> None:
         self._bridge.submit(
@@ -1060,6 +1154,7 @@ class MainWindow(QWidget):
         created, collected, liked_id = data
         self._liked_id = liked_id
         self.sidebar.set_my_playlists(created, collected)
+        self._prefetch_liked_ids()
 
     def _on_my_music_error(self, error: BaseException) -> None:
         api_log.get_logger().warning("我的歌单未加载：%s", error)
@@ -1093,6 +1188,11 @@ class MainWindow(QWidget):
         if self._session is not None:
             self._session.invalidate()
         self._liked_id = None
+        self._logged_in = False
+        self._liked_ids.clear()
+        queue_store.save([], 0)
+        self.player.stop_source()
+        self.playlist_page.table.set_tracks([])
         self.sidebar.set_my_playlists([], [])
         self.settings_page.set_account(logged_in=False)
 
@@ -1133,7 +1233,17 @@ class MainWindow(QWidget):
             self.stack.setCurrentIndex(self._history[self._hpos])
 
     # ================= 搜索 =================
+    def _remember_search(self, text: str) -> None:
+        keyword = text.strip()
+        if not keyword:
+            return
+        history = [w for w in (self._settings.get("search_history") or []) if w != keyword]
+        history.insert(0, keyword)
+        self._settings.set("search_history", history[:10])
+        self.search_page.set_history(history[:10])
+
     def _on_search(self, text: str) -> None:
+        self._remember_search(text)
         self._search_offsets.clear()
         self.search_page.search(text)
         self._show(P_SEARCH)
@@ -1164,8 +1274,9 @@ class MainWindow(QWidget):
         keyword = self.search_page.query
         if not keyword:
             return
-        offset = self._search_offsets.get((keyword, 0), 0)
-        self._fetch_search(keyword, 0, offset)
+        tab = self.search_page.tab
+        offset = self._search_offsets.get((keyword, tab), 0)
+        self._fetch_search(keyword, tab, offset)
 
     async def _search(self, keyword: str, tab: int,
                       offset: int = 0) -> tuple[str, int, int, SearchPayload]:
@@ -1176,17 +1287,17 @@ class MainWindow(QWidget):
             result = await search_songs(client, keyword, page=page, limit=SEARCH_PAGE_SIZE)
             payload = SearchPayload(SearchKind.SONG, tracks=tuple(to_track_list(result.songs)))
         elif tab == 1:
-            result = await search_artists(client, keyword, limit=20)
+            result = await search_artists(client, keyword, page=offset // 20 + 1, limit=20)
             payload = SearchPayload(
                 SearchKind.ARTIST, cards=tuple(to_artist_card(hit) for hit in result.artists)
             )
         elif tab == 2:
-            result = await search_albums(client, keyword, limit=20)
+            result = await search_albums(client, keyword, page=offset // 20 + 1, limit=20)
             payload = SearchPayload(
                 SearchKind.ALBUM, cards=tuple(to_album_card(hit) for hit in result.albums)
             )
         else:
-            result = await search_playlists(client, keyword, limit=20)
+            result = await search_playlists(client, keyword, page=offset // 20 + 1, limit=20)
             payload = SearchPayload(
                 SearchKind.PLAYLIST, playlists=tuple(to_playlist_hit(hit) for hit in result.playlists)
             )
@@ -1194,14 +1305,18 @@ class MainWindow(QWidget):
 
     def _apply_search(self, data: tuple[str, int, int, SearchPayload]) -> None:
         keyword, tab, offset, payload = data
-        if offset > 0 and payload.kind is SearchKind.SONG:
-            self.search_page.append_tracks(list(payload.tracks), keyword)
+        if offset > 0:
+            if payload.kind is SearchKind.SONG:
+                self.search_page.append_tracks(list(payload.tracks), keyword)
+            else:
+                self.search_page.append_results(payload, keyword)
         else:
             self.search_page.set_results(payload, keyword)
 
-        if payload.kind is SearchKind.SONG:
-            self._search_offsets[(keyword, tab)] = offset + len(payload.tracks)
-            self.search_page.set_has_more(len(payload.tracks) >= SEARCH_PAGE_SIZE)
+        size = len(payload.tracks) if payload.kind is SearchKind.SONG else len(payload.cards) or len(payload.playlists)
+        page_size = SEARCH_PAGE_SIZE if payload.kind is SearchKind.SONG else 20
+        self._search_offsets[(keyword, tab)] = offset + size
+        self.search_page.set_has_more(size >= page_size)
 
     def _on_search_error(self, error: BaseException) -> None:
         api_log.get_logger().warning("搜索未返回真实结果，沿用本地过滤：%s", error)

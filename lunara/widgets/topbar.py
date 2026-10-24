@@ -129,8 +129,21 @@ class TopBar(QFrame):
         self.btn_max.setToolTip("还原" if on else "最大化")
 
     def set_account(self, nickname: str = "", *, vip: bool = False) -> None:
-        """头像的 tooltip 跟着登录态走（头像本身不可上传，只是占位）。"""
+        """头像的 tooltip 跟着登录态走。"""
         if nickname:
             self.avatar.setToolTip(f"{nickname}{'（会员）' if vip else ''} · 点击打开设置")
         else:
             self.avatar.setToolTip("未登录 · 点击打开设置")
+
+    def set_avatar(self, image: QPixmap | None) -> None:
+        """设置真实头像；传 None 回到默认的月牙占位。"""
+        if image is None or image.isNull():
+            pm = cover_pixmap(77, 60, 268, radius=30)
+            self.avatar.setIcon(QIcon(pm))
+            return
+        side = min(image.width(), image.height())
+        cropped = image.copy((image.width() - side) // 2, (image.height() - side) // 2,
+                             side, side)
+        self.avatar.setIcon(QIcon(cropped.scaled(
+            30, 30, Qt.AspectRatioMode.KeepAspectRatioByExpanding,
+            Qt.TransformationMode.SmoothTransformation)))

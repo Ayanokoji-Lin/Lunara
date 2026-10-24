@@ -23,8 +23,9 @@ class SessionState:
     vip: bool
     vip_type: int
     nickname: str
-    user_id: int | None
     fetched_at: float
+    avatar_url: str = ""
+    user_id: int | None = None
 
     @property
     def age(self) -> float:
@@ -32,7 +33,8 @@ class SessionState:
 
 
 ANONYMOUS = SessionState(
-    logged_in=False, vip=False, vip_type=0, nickname="", user_id=None, fetched_at=0.0
+    logged_in=False, vip=False, vip_type=0, nickname="", avatar_url="",
+    user_id=None, fetched_at=0.0
 )
 
 
@@ -78,6 +80,7 @@ class SessionService:
             vip=status.vip,
             vip_type=status.vip_type,
             nickname=profile.nickname if profile else "",
+            avatar_url=profile.avatar_url if profile else "",
             user_id=profile.user_id if profile else None,
             fetched_at=time.time(),
         )

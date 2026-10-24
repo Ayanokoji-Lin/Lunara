@@ -288,6 +288,13 @@ class Player(QObject):
         self.likeChanged.emit(track_id, liked)
         return liked
 
+    def mark_liked(self, track_id: int, liked: bool) -> None:
+        """只改本地状态、不发信号（预加载「已喜欢」用）。"""
+        if liked:
+            self._liked.add(track_id)
+        else:
+            self._liked.discard(track_id)
+
     def set_liked(self, track_id: int, liked: bool) -> None:
         """直接设置状态（同步失败回滚用），会发 ``likeChanged`` 让界面刷新。"""
         if liked:
