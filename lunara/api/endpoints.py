@@ -78,17 +78,27 @@ NEW_SONGS = Endpoint(
     "参数 limit,areaId,type；返回 result[].song（注意是长字段名 album/artists/duration）",
 )
 
+SONG_DETAIL = Endpoint(
+    "/api/v3/song/detail",
+    True,
+    "参数 c=[{id}]（JSON 字符串）；返回 songs[]（短字段 al/ar/dt）与 privileges[]",
+)
+
+USER_PLAYLIST = Endpoint(
+    "/api/user/playlist",
+    True,
+    "参数 uid,limit,offset；返回 playlist[] 与 more（需要登录 Cookie）",
+)
+
 # --------------------------------------------------------------------------- #
 # 待验证（阶段③④ 逐条跑真请求确认，未确认前不写实现）
 # --------------------------------------------------------------------------- #
 UNVERIFIED: tuple[tuple[str, str], ...] = (
-    ("/api/v3/song/detail", "歌曲详情：参数 c=[{id}]，字段待实测"),
     ("/api/v1/album/{id}", "专辑详情：是否 v1 待实测"),
     ("/api/v1/artist/{id}", "歌手详情：是否 v1 待实测"),
     ("/api/mv/detail", "MV 详情：路径待实测"),
     ("/api/comment/music", "评论：分页游标语义（before/time/limit/offset）待实测"),
-    ("/api/v1/user/playlist", "用户歌单：参数 uid/limit/offset 待实测"),
-    ("/api/song/like", "喜欢的音乐：uid 参数与返回结构待实测（匿名 code=400）"),
     ("/api/register/anonimous", "匿名 Cookie 换取：是否需要 deviceId/加密参数待实测"),
+    ("/api/song/like", "eapi 下 uid 传什么都 code=400（疑似仅 weapi 支持）；改走「我喜欢的音乐」歌单，无需此接口"),
     ("/api/login/qrcode/unikey", "扫码登录：eapi 是否支持待实测（NeteaseCloudMusicApi 用 weapi）"),
 )

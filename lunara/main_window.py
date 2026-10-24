@@ -21,6 +21,7 @@ from .api.core import logging as api_log
 from .api.modules.lyric import get_lyric
 from .api.modules.personalized import get_new_songs, get_recommended_playlists
 from .api.modules.playlist import get_playlist_detail
+from .api.modules.user import get_user_playlists
 from .api.modules.search import (
     SearchKind,
     search_albums,
@@ -42,6 +43,7 @@ from .services.async_bridge import run_sync, shutdown as shutdown_bridge
 from .services.covers import covers
 from .services.catalog import (
     SearchPayload,
+    split_user_playlists,
     to_album_card,
     to_artist_card,
     to_playlist,
@@ -183,6 +185,7 @@ class MainWindow(QWidget):
 
         self._account = AccountStore()
         self._session: SessionService | None = None
+        self._liked_id: int | None = None
         self._restore_login()
 
         QTimer.singleShot(0, self._load_home)
@@ -210,7 +213,16 @@ class MainWindow(QWidget):
             except (IndexError, ValueError):
                 idx = 0
             self.open_playlist(PLAYLISTS[idx % len(PLAYLISTS)].id)
+        elif key.startswith("myplaylist:"):
+            try:
+                pid = int(key.split(":", 1)[1])
+            except (IndexError, ValueError):
+                return
+            self.open_playlist(pid)
         elif key == "liked":
+            if self._liked_id:
+                self.open_playlist(self._liked_id)   # 真实「我喜欢的音乐」就是个歌单
+                return
             pl = Playlist(0, "我喜欢的音乐", "蝶恋", 128_000, 268, "我喜欢的")
             self.playlist_page.set_playlist(pl, TRACKS[:8], title="我喜欢的音乐")
             self._show(P_PLAYLIST)
@@ -318,6 +330,30 @@ class MainWindow(QWidget):
         self.settings_page.set_account(
             logged_in=state.logged_in, nickname=state.nickname, vip=state.vip
         )
+        if state.logged_in and state.user_id:
+            self._load_my_music(state.user_id)
+        else:
+            self._liked_id = None
+            self.sidebar.set_my_playlists([], [])
+
+    def _load_my_music(self, uid: int) -> None:
+        self._bridge.submit(
+            self._fetch_my_music(uid),
+            on_success=self._apply_my_music,
+            on_error=self._on_my_music_error,
+        )
+
+    async def _fetch_my_music(self, uid: int) -> tuple[list[Playlist], list[Playlist], int | None]:
+        response = await get_user_playlists(get_client(), uid, limit=100)
+        return split_user_playlists(response.playlist)
+
+    def _apply_my_music(self, data: tuple[list[Playlist], list[Playlist], int | None]) -> None:
+        created, collected, liked_id = data
+        self._liked_id = liked_id
+        self.sidebar.set_my_playlists(created, collected)
+
+    def _on_my_music_error(self, error: BaseException) -> None:
+        api_log.get_logger().warning("我的歌单未加载：%s", error)
 
     def _on_account_error(self, error: BaseException) -> None:
         api_log.get_logger().warning("登录态查询失败，按未登录处理：%s", error)
@@ -347,6 +383,8 @@ class MainWindow(QWidget):
         forget_cookies(get_client())
         if self._session is not None:
             self._session.invalidate()
+        self._liked_id = None
+        self.sidebar.set_my_playlists([], [])
         self.settings_page.set_account(logged_in=False)
 
     # ================= 退出清理 =================

@@ -32,7 +32,7 @@ python main.py
 ## 数据层（进行中）
 
 首页（推荐歌单 / 新歌速递）、歌单详情、搜索四类（单曲 / 歌手 / 专辑 / 歌单）、
-歌词与封面已接真实数据，账号登录已可用；「我的歌单 / 喜欢的音乐」与下载仍走演示数据。
+歌词与封面已接真实数据，账号登录可用，登录后侧栏会换成真实歌单与「我喜欢的音乐」；下载仍走演示数据。
 
 登录方式：设置 → 账号 → 登录，会弹一个内嵌浏览器窗口，你在里面正常登录网易云，
 登录成功后自动抓取 Cookie 并用 **Windows DPAPI** 加密存到
@@ -80,12 +80,13 @@ self._bridge.submit(search_songs(client, text),
 自检：
 
 ```bash
-.venv/Scripts/python.exe -m pytest              # 142 项，全打桩不联网
+.venv/Scripts/python.exe -m pytest              # 145 项，全打桩不联网
 LUNARA_LIVE=1 .venv/Scripts/python.exe -m pytest tests/test_live.py   # 真上游冒烟
 .venv/Scripts/python.exe tools/demo_search.py 周杰伦
 .venv/Scripts/python.exe tools/demo_player_url.py 347230 lossless
 .venv/Scripts/python.exe tools/verify_ui_live.py                      # 首页/歌单端到端 + 截图
 .venv/Scripts/python.exe tools/smoke_login.py                         # 登录窗口能否加载
+.venv/Scripts/python.exe tools/verify_account_ui.py                   # 登录态：我的歌单 + 喜欢（需先登录）
 ```
 
 分层、错误码、已验证的上游事实见 `docs/API-PLAN.md`，

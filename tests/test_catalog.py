@@ -195,3 +195,50 @@ def test_artist_and_album_cards_carry_cover_url() -> None:
 
     assert to_artist_card(artists.artists[0]).cover_url == artists.artists[0].pic_url
     assert to_album_card(albums.albums[0]).cover_url == albums.albums[0].pic_url
+
+
+# --------------------------------------------------------------------------- #
+# 我的歌单：创建 / 收藏 / 我喜欢的拆分
+# --------------------------------------------------------------------------- #
+def test_split_user_playlists() -> None:
+    from lunara.api.models.user import UserPlaylistsResponse
+    from lunara.services.catalog import split_user_playlists
+
+    payload = UserPlaylistsResponse.model_validate(_load("user_playlists"))
+    created, collected, liked_id = split_user_playlists(payload.playlist)
+
+    assert liked_id == 9687758128          # 自己的「喜欢的音乐」
+    assert all(p.title != "到桔子林去喜欢的音乐" for p in created + collected)
+    assert created and collected
+
+
+def test_split_prefers_own_liked_playlist() -> None:
+    """收藏别人的「喜欢的音乐」也是 specialType=5，不能抢走 liked_id。"""
+    from lunara.api.models.user import UserPlaylistsResponse
+    from lunara.services.catalog import split_user_playlists
+
+    payload = UserPlaylistsResponse.model_validate({
+        "playlist": [
+            {"id": 1, "name": "我的喜欢", "specialType": 5, "subscribed": False},
+            {"id": 2, "name": "别人的喜欢", "specialType": 5, "subscribed": True},
+        ]
+    })
+    created, collected, liked_id = split_user_playlists(payload.playlist)
+
+    assert liked_id == 1
+    assert [p.id for p in collected] == [2]   # 收藏的那份进「收藏的歌单」
+    assert created == []
+
+
+def test_playlist_tolerates_null_fields() -> None:
+    """实测：私密歌单的 description / creator.nickname 可能是 null。"""
+    response = PlaylistDetailResponse.model_validate(
+        {"code": 200, "playlist": {"id": 1, "name": "无简介", "description": None,
+                                   "creator": {"nickname": None}}}
+    )
+    assert response.playlist is not None
+
+    playlist = to_playlist(response.playlist)
+
+    assert playlist.desc == ""
+    assert playlist.author  # 回落到默认作者，不是 None

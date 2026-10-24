@@ -126,8 +126,7 @@ class PlaylistPage(BasePage):
         self.lbl_meta.setText(
             f"由 {playlist.author} 创建 · {len(self._tracks)} 首 · "
             f"播放 {playlist.plays_text}")
-        self.lbl_desc.setText(
-            playlist.desc or "月海拾音计划 · 每周四更新 · 收录适合深夜的静谧之声。")
+        self.lbl_desc.setText(playlist.desc)
         self.lbl_list.title.setText("歌曲列表")
         self.lbl_list.hint.setText(f"共 {len(self._tracks)} 首")
         self.table.set_tracks(self._tracks)

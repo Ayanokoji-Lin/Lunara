@@ -141,6 +141,12 @@ LYRICS: list[tuple[int, str]] = [
     (115000, "—— 完 ——"),
 ]
 
+# 演示歌单统一一句简介（真实歌单用接口给的 description，没有就留空）
+DEMO_DESC = "月海拾音计划 · 每周四更新 · 收录适合深夜的静谧之声。"
+for _pl in PLAYLISTS:
+    if not _pl.desc:
+        _pl.desc = DEMO_DESC
+
 # 演示用：给每个歌单循环分配曲目
 for _i, _pl in enumerate(PLAYLISTS):
     _start = (_i * 3) % len(TRACKS)

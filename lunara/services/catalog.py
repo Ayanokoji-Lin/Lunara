@@ -14,6 +14,7 @@ from dataclasses import dataclass
 from ..api.models.personalized import NewSongEntry, RecommendedPlaylist
 from ..api.models.playlist import PlaylistDetail
 from ..api.models.search import AlbumHit, ArtistHit, PlaylistHit
+from ..api.models.user import UserPlaylist
 from ..api.models.song import Song
 from ..api.modules.search import SearchKind
 from ..data import Playlist, Track
@@ -87,7 +88,7 @@ def to_playlist(detail: PlaylistDetail) -> Playlist:
         plays=detail.play_count,
         hue=hue_for(detail.id),
         tag=detail.tags[0] if detail.tags else "",
-        desc=detail.description,
+        desc=detail.description or "",
         cover_url=detail.cover_url,
         tracks=[to_track(song) for song in detail.tracks],
     )
@@ -138,3 +139,42 @@ def to_playlist_hit(hit: PlaylistHit) -> Playlist:
         hue=hue_for(hit.id),
         cover_url=hit.cover_url,
     )
+
+
+def to_playlist_from_user(item: UserPlaylist) -> Playlist:
+    """``/api/user/playlist`` 的一项 → 侧栏用的 Playlist（无曲目）。"""
+    return Playlist(
+        id=item.id,
+        title=item.name,
+        author=item.author or "我",
+        plays=item.play_count,
+        hue=hue_for(item.id),
+        cover_url=item.cover_url,
+    )
+
+
+def split_user_playlists(
+    items: tuple[UserPlaylist, ...] | list[UserPlaylist],
+) -> tuple[list[Playlist], list[Playlist], int | None]:
+    """拆成（创建的、收藏的、我喜欢的 id）。
+
+    「我喜欢的音乐」是 ``specialType=5`` 的特殊歌单，不放进侧栏列表，
+    而是留给「我喜欢的音乐」那个固定入口。
+    """
+    created: list[Playlist] = []
+    collected: list[Playlist] = []
+    liked_id: int | None = None
+
+    for item in items:
+        # 实测：收藏别人的「喜欢的音乐」也是 specialType=5，靠 subscribed 区分；
+        # 只认自己那个（subscribed=False），否则会指到别人歌单上。
+        if item.is_liked and not item.subscribed:
+            if liked_id is None:
+                liked_id = item.id
+            continue
+        if item.is_collected:
+            collected.append(to_playlist_from_user(item))
+        else:
+            created.append(to_playlist_from_user(item))
+
+    return created, collected, liked_id

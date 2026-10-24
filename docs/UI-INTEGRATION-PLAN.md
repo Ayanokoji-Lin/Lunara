@@ -54,7 +54,7 @@
 | P3.5 真实封面 | ✅ 完成 | 首页/歌单/搜索/播放页都是真图，拿不到时回落月牙空态 |
 | P4 歌词 | ✅ 完成（音频待单独一轮） | 热歌榜首曲 101 行真实歌词，时间轴与虚拟时钟对齐 |
 | P5a 登录 | ✅ 完成 | 内嵌浏览器登录 → 抓 Cookie → DPAPI 加密落盘 |
-| P5b 我的音乐 | ⬜ 下一轮 | 侧栏真实歌单 / 喜欢的音乐（需先登录一次） |
+| P5b 我的音乐 | ✅ 完成 | 侧栏 6 个真实歌单；「我喜欢的音乐」456 首 |
 | P6 下载 | ⬜ | 真实文件落盘 + 断点续传 |
 | P7 收尾 | ⬜ | `README-api.md` |
 
@@ -164,20 +164,28 @@ DeferredDelete 前仍留在视口里——换歌词瞬间会看到「两列歌�
 **已知环境限制**：本机无 GPU 上下文时 Chromium 会加载失败，
 需 `QT_OPENGL=software`（登录窗口里已内置这条提示）。
 
-### P5b · 我的音乐（需登录，下一轮）
+### P5b · 我的音乐 ✅
 
-登录已就绪，这一轮只做「登录之后能看到什么」。
+**实测（2026-10-24，登录态，uid 9605257338）**
+- `/api/user/playlist` → `playlist[]`（12 个，含 `specialType` / `subscribed` / `creator`）；
+- `/api/song/like` → **eapi 下 code=400**（uid 传 int 或 str 都一样，疑似仅 weapi 支持），
+  所以「我喜欢的音乐」改走**歌单**：它本身就是 `specialType=5` 的特殊歌单，详情接口照常给 456 首。
+- 坑：收藏别人的「喜欢的音乐」也是 `specialType=5`，必须靠 `subscribed` 区分，
+  否则 `liked_id` 会指到别人歌单上（实测踩到过）。
 
 **接线**
-- `/api/user/playlist`（参数 `uid/limit/offset`）→ `Sidebar.set_my_playlists()` 替换静态组名；
-- `/api/song/like`（`uid`）→ 侧栏「我喜欢的音乐」的曲目表；
-- 喜欢/取消喜欢 → `/api/like`（写操作要带 `__csrf`，登录时已一并保存）；
-- 登录态变化时清空这些缓存并重拉。
+- `api/modules/user.get_user_playlists()` + `models.user.UserPlaylist`；
+- `catalog.split_user_playlists()` →（创建的、收藏的、我喜欢的 id）；
+- `Sidebar.set_my_playlists()` 重建「创建的歌单 / 收藏的歌单」两组，key 用 `myplaylist:<id>`；
+- `MainWindow.navigate()` 支持 `myplaylist:<id>`；`liked` 有真实 id 就打开那个歌单，没有则回落演示数据；
+- 退出登录恢复演示分组。
 
-**前置**：这两个接口目前还是 `UNVERIFIED`（匿名 `code=400`），
-需要你在应用里登录一次，我才能抓到真实回包、补夹具、把字段确认下来。
+**顺带修的**
+- `PlaylistDetail.description` / `creator.nickname` 可能是 `null` → 模型容忍，简介不再硬编码兜底
+  （演示歌单的简介改由 `data.py` 提供）；
+- 侧栏歌单名过长 → 按 150px 省略 + `setToolTip` 显示全名。
 
-**验收**：登录后侧栏出现真实歌单，点进去有曲目；点喜欢能落库，重启仍在。
+**验收**：截图 `shots/18_sidebar_mine.png`、`19_liked_playlist.png`。
 
 ### P6 · 下载（1 轮）
 

@@ -6,7 +6,7 @@
 from __future__ import annotations
 
 from PyQt6.QtCore import QPointF, QSize, Qt, pyqtSignal
-from PyQt6.QtGui import QColor, QPainter, QPainterPath, QRadialGradient
+from PyQt6.QtGui import QColor, QFontMetrics, QPainter, QPainterPath, QRadialGradient
 from PyQt6.QtWidgets import (
     QFrame,
     QHBoxLayout,
@@ -18,6 +18,7 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
+from ..data import Playlist
 from ..theme import THEME
 from .common import font
 from .icons import icon
@@ -87,6 +88,9 @@ class SidebarItem(QPushButton):
 class Sidebar(QFrame):
     navigate = pyqtSignal(str)
 
+    #: 歌单名可用宽度：按钮 192 - padding-left 36 - 余量 6
+    TEXT_WIDTH = 150
+
     NAV_MAIN = [
         ("home", "月海拾音", "fa5s.moon"),
         ("podcast", "星轨播客", "fa5s.podcast"),
@@ -147,9 +151,9 @@ class Sidebar(QFrame):
         for key, text, ico in self.NAV_MINE:
             col.addWidget(self._add_item(key, text, ico))
 
-        for gi, (title, names) in enumerate(self.GROUPS):
-            col.addSpacing(10)
-            col.addWidget(self._group(title, names, gi))
+        self._col = col
+        self._group_widgets: list[QWidget] = []
+        self._rebuild_groups()
 
         col.addStretch(1)
         scroll.setWidget(inner)
@@ -174,7 +178,48 @@ class Sidebar(QFrame):
         lbl.setFixedHeight(26)
         return lbl
 
-    def _group(self, title: str, names: list[str], gi: int) -> QWidget:
+    def _default_groups(self) -> list[tuple[str, list[tuple[str, str]]]]:
+        """演示用的分组（未登录时显示）。"""
+        return [
+            (title, [(name, f"playlist:{gi * 3 + ni}") for ni, name in enumerate(names)])
+            for gi, (title, names) in enumerate(self.GROUPS)
+        ]
+
+    def _rebuild_groups(
+        self, groups: list[tuple[str, list[tuple[str, str]]]] | None = None
+    ) -> None:
+        """重建「歌单分组」区域；``entries`` 是 (显示文案, 导航 key)。"""
+        for widget in self._group_widgets:
+            self._col.removeWidget(widget)
+            widget.setParent(None)
+            widget.deleteLater()
+        self._group_widgets.clear()
+
+        for key in [k for k in self._items if k.startswith("myplaylist:")]:
+            self._items.pop(key, None)
+
+        # 插到末尾的 stretch 之前
+        for gi, (title, entries) in enumerate(groups or self._default_groups()):
+            index = self._col.count() - 1
+            self._col.insertSpacing(index, 10)
+            box = self._group(title, entries)
+            self._group_widgets.append(box)
+            self._col.insertWidget(self._col.count() - 1, box)
+
+    def set_my_playlists(self, created: list[Playlist], collected: list[Playlist]) -> None:
+        """登录后把侧栏换成真实歌单；两个都空则恢复演示分组。"""
+        if not created and not collected:
+            self._rebuild_groups()
+            return
+
+        groups: list[tuple[str, list[tuple[str, str]]]] = []
+        if created:
+            groups.append(("创建的歌单", [(p.title, f"myplaylist:{p.id}") for p in created]))
+        if collected:
+            groups.append(("收藏的歌单", [(p.title, f"myplaylist:{p.id}") for p in collected]))
+        self._rebuild_groups(groups)
+
+    def _group(self, title: str, entries: list[tuple[str, str]]) -> QWidget:
         box = QWidget()
         lay = QVBoxLayout(box)
         lay.setContentsMargins(0, 0, 0, 0)
@@ -192,13 +237,16 @@ class Sidebar(QFrame):
         bl = QVBoxLayout(body)
         bl.setContentsMargins(0, 0, 0, 0)
         bl.setSpacing(1)
-        for ni, name in enumerate(names):
-            sub = QPushButton(name)
+        for text, key in entries:
+            sub = QPushButton()
+            # 歌单名可能很长，按实际宽度省略，鼠标悬停看全名
+            metrics = QFontMetrics(sub.font())
+            sub.setText(metrics.elidedText(text, Qt.TextElideMode.ElideRight, self.TEXT_WIDTH))
+            sub.setToolTip(text)
             sub.setObjectName("SidebarSubItem")
             sub.setCheckable(True)
             sub.setCursor(Qt.CursorShape.PointingHandCursor)
             sub.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-            key = f"playlist:{gi * 3 + ni}"
             sub.clicked.connect(lambda _=False, k=key: self._on_click(k))
             self._items[key] = sub
             bl.addWidget(sub)

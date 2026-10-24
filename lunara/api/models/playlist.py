@@ -13,7 +13,8 @@ from .song import Song
 
 
 class PlaylistCreator(StrictModel):
-    nickname: str = ""
+    # 实测：个别歌单的 creator.nickname 会是 null，别让整个响应挂掉
+    nickname: str | None = ""
     user_id: int = Field(default=0, alias="userId")
 
 
@@ -21,7 +22,7 @@ class PlaylistDetail(StrictModel):
     id: int
     name: str
     cover_url: str = Field(default="", alias="coverImgUrl")
-    description: str = ""
+    description: str | None = ""   # 实测：私密歌单的 description 可能是 null
     track_count: int = Field(default=0, alias="trackCount")
     play_count: int = Field(default=0, alias="playCount")
     creator: PlaylistCreator | None = None
@@ -30,7 +31,7 @@ class PlaylistDetail(StrictModel):
 
     @property
     def author(self) -> str:
-        return self.creator.nickname if self.creator else ""
+        return (self.creator.nickname or "") if self.creator else ""
 
 
 class PlaylistDetailResponse(StrictModel):
