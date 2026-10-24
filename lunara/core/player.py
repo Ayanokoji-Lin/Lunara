@@ -57,6 +57,7 @@ class Player(QObject):
         self.volume = 72
         self._pos = 0
         self._playing = False
+        self._rate = 1.0
         self._liked: set[int] = set()
 
         # 真实时长（毫秒）：0 表示还没拿到，回落到 Track.duration_ms
@@ -251,6 +252,22 @@ class Player(QObject):
         self.mode = order[(order.index(self.mode) + 1) % len(order)]
         self.modeChanged.emit(self.mode)
 
+    def set_rate(self, rate: float) -> None:
+        """播放速度（0.75–2.0）。媒体后端用原生接口，时钟后端按倍数推进。"""
+        self._rate = max(0.5, min(2.0, float(rate)))
+        if self._media is not None:
+            self._media.setPlaybackRate(self._rate)
+
+    def insert_next(self, track: Track) -> None:
+        """插到当前曲目后面（「下一首播放」）。"""
+        if track is None:
+            return
+        if not self.queue:
+            self.set_queue([track], 0, autoplay=False)
+            return
+        pos = max(0, self.index) + 1
+        self.queue = self.queue[:pos] + [track] + self.queue[pos:]
+
     def set_volume(self, v: int) -> None:
         self.volume = max(0, min(100, v))
         if self._audio is not None:
@@ -406,7 +423,7 @@ class Player(QObject):
         total = self.duration_ms
         if total <= 0:
             return
-        self._pos += self._timer.interval()
+        self._pos += int(self._timer.interval() * self._rate)
         if self._pos >= total:
             if self.mode == MODE_SINGLE:
                 self._pos = 0

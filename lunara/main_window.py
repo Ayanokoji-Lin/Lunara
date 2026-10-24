@@ -52,6 +52,7 @@ from .services.download.store import DownloadStore
 from .services.player_url.service import PlayerUrlService
 from .services.player_url.types import ResolveOutcome
 from .services.local_library import scan
+from .services import queue_store
 from .services.recent import RecentStore
 from .services.settings_store import SettingsStore
 from .services.catalog import (
@@ -207,14 +208,17 @@ class MainWindow(QWidget):
         self.player.trackChanged.connect(self._on_track_changed)
         self.player.positionChanged.connect(self._remember_position)
         self.player.set_fade(bool(self._settings.get("fade", True)))
-        self.grid_page.cardActivated.connect(self._on_grid_card)
-        self.home.hdr_playlists.moreClicked.connect(self._open_more_playlists)
-        self.home.hdr_news.moreClicked.connect(self._open_more_songs)
-        self.playlist_page.downloadRequested.connect(self._enqueue_downloads)
-        self.playlist_page.actionRequested.connect(self._on_page_action)
-        self.download_page.finished.connect(self._on_download_finished)
+
+        # 音量 / 倍速 / 队列的恢复放到事件循环第一帧：
+        # 直接在这里 set_queue 会立刻发 trackChanged，而那时 _recent 还没建好，
+        # 槽里抛 AttributeError 会被 PyQt6 当成致命错误直接结束进程。
+        self._sleep_timer = QTimer(self)
+        self._sleep_timer.setSingleShot(True)
+        self._sleep_timer.timeout.connect(self._on_sleep_timeout)
+        self.player.volumeChanged.connect(self._remember_volume)
+        QTimer.singleShot(0, self._restore_session)
+
         self._settings.changed.connect(self._on_setting_changed)
-        self.now_playing.set_mode(int(self._settings.get("player_view", 0)))
         self.now_playing.set_mode(int(self._settings.get("player_view", 0)))
         self.now_playing.backRequested.connect(self.go_back)
 
@@ -243,7 +247,6 @@ class MainWindow(QWidget):
         self.player.trackChanged.connect(self._load_lyric)
         self.settings_page.loginRequested.connect(self._on_login_requested)
         self.settings_page.logoutRequested.connect(self._on_logout_requested)
-        self.settings_page.themeChanged.connect(self._on_theme_changed)
         self.settings_page.themeChanged.connect(self._on_theme_changed)
 
         self._account = AccountStore()
@@ -668,6 +671,7 @@ class MainWindow(QWidget):
         if track is None or track.id <= 0:
             return
         self._recent.add(track)
+        self._save_queue()
         if not self._settings.get("memory_position", True):
             return
         saved = self._resume.get(str(track.id), 0)
@@ -684,6 +688,100 @@ class MainWindow(QWidget):
         self._resume_dirty = True
         if len(self._resume) > 200:
             self._resume = dict(list(self._resume.items())[-200:])
+
+    def _restore_session(self) -> None:
+        """上次退出时的音量、倍速、队列（不开播）。"""
+        self.player.set_volume(int(self._settings.get("volume", self.player.volume)))
+        self.player.set_rate(float(self._settings.get("playback_rate", 1.0)))
+        self._apply_sleep(int(self._settings.get("sleep_minutes", 0)))
+
+        tracks, index = queue_store.load()
+        if tracks:
+            self.player.set_queue(tracks, index, autoplay=False)
+            self.playlist_page.table.set_tracks(tracks)
+
+    def _apply_sleep(self, minutes: int) -> None:
+        self._sleep_timer.stop()
+        if minutes > 0:
+            self._sleep_timer.start(minutes * 60 * 1000)
+            self.banner.show_message(f"{minutes} 分钟后自动暂停", level="info",
+                                     timeout_ms=3000)
+
+    def _on_sleep_timeout(self) -> None:
+        if self.player.is_playing:
+            self.player.pause()
+        self.banner.show_message("睡眠定时器到点，已暂停播放", level="info", timeout_ms=5000)
+
+    def _on_play_next(self, track: Track) -> None:
+        self.player.insert_next(track)
+        self.banner.show_message(f"下一首播放：{track.title}", level="info", timeout_ms=3000)
+
+    def _on_queue_append(self, track: Track) -> None:
+        self.player.queue.append(track)
+        self.banner.show_message(f"已加到队列末尾：{track.title}", level="info", timeout_ms=3000)
+
+    def _reload_current_quality(self) -> None:
+        """换音质后重新解析当前曲目，并回到原来的位置。"""
+        track = self.player.current
+        if track is None or not track.remote or not self.player.is_playing:
+            return
+        position = self.player.position
+        self.player.play_track(track, self.player.queue)
+        QTimer.singleShot(1200, lambda: self.player.seek(position))
+
+    def _remember_volume(self, volume: int) -> None:
+        if self._settings.get("volume") != volume:
+            self._settings.set("volume", int(volume))
+
+    def _save_queue(self) -> None:
+        queue_store.save(list(self.player.queue), self.player.index)
+
+    def _restore_session(self) -> None:
+        """上次退出时的音量、倍速、队列（不开播）。"""
+        self.player.set_volume(int(self._settings.get("volume", self.player.volume)))
+        self.player.set_rate(float(self._settings.get("playback_rate", 1.0)))
+        self._apply_sleep(int(self._settings.get("sleep_minutes", 0)))
+
+        tracks, index = queue_store.load()
+        if tracks:
+            self.player.set_queue(tracks, index, autoplay=False)
+            self.playlist_page.table.set_tracks(tracks)
+
+    def _apply_sleep(self, minutes: int) -> None:
+        self._sleep_timer.stop()
+        if minutes > 0:
+            self._sleep_timer.start(minutes * 60 * 1000)
+            self.banner.show_message(f"{minutes} 分钟后自动暂停", level="info",
+                                     timeout_ms=3000)
+
+    def _on_sleep_timeout(self) -> None:
+        if self.player.is_playing:
+            self.player.pause()
+        self.banner.show_message("睡眠定时器到点，已暂停播放", level="info", timeout_ms=5000)
+
+    def _on_play_next(self, track: Track) -> None:
+        self.player.insert_next(track)
+        self.banner.show_message(f"下一首播放：{track.title}", level="info", timeout_ms=3000)
+
+    def _on_queue_append(self, track: Track) -> None:
+        self.player.queue.append(track)
+        self.banner.show_message(f"已加到队列末尾：{track.title}", level="info", timeout_ms=3000)
+
+    def _reload_current_quality(self) -> None:
+        """换音质后重新解析当前曲目，并回到原来的位置。"""
+        track = self.player.current
+        if track is None or not track.remote or not self.player.is_playing:
+            return
+        position = self.player.position
+        self.player.play_track(track, self.player.queue)
+        QTimer.singleShot(1200, lambda: self.player.seek(position))
+
+    def _remember_volume(self, volume: int) -> None:
+        if self._settings.get("volume") != volume:
+            self._settings.set("volume", int(volume))
+
+    def _save_queue(self) -> None:
+        queue_store.save(list(self.player.queue), self.player.index)
 
     def _flush_resume(self) -> None:
         if not self._resume_dirty:
@@ -729,14 +827,38 @@ class MainWindow(QWidget):
             self.now_playing.set_mode(int(value))
         elif key == "fade":
             self.player.set_fade(bool(value))
+        elif key == "playback_rate":
+            self.player.set_rate(float(value))
+        elif key == "sleep_minutes":
+            self._apply_sleep(int(value))
+        elif key == "play_quality":
+            self._reload_current_quality()
         elif key == "fade":
             self.player.set_fade(bool(value))
+        elif key == "playback_rate":
+            self.player.set_rate(float(value))
+        elif key == "sleep_minutes":
+            self._apply_sleep(int(value))
+        elif key == "play_quality":
+            self._reload_current_quality()
         elif key == "player_view":
             self.now_playing.set_mode(int(value))
         elif key == "fade":
             self.player.set_fade(bool(value))
+        elif key == "playback_rate":
+            self.player.set_rate(float(value))
+        elif key == "sleep_minutes":
+            self._apply_sleep(int(value))
+        elif key == "play_quality":
+            self._reload_current_quality()
         elif key == "fade":
             self.player.set_fade(bool(value))
+        elif key == "playback_rate":
+            self.player.set_rate(float(value))
+        elif key == "sleep_minutes":
+            self._apply_sleep(int(value))
+        elif key == "play_quality":
+            self._reload_current_quality()
 
     # ================= 账号 =================
     def _restore_login(self) -> None:
@@ -832,6 +954,7 @@ class MainWindow(QWidget):
 
     def closeEvent(self, event) -> None:
         self._flush_resume()
+        self._save_queue()
         try:
             self.player.shutdown()
         except Exception:  # noqa: BLE001

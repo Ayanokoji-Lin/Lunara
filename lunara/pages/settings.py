@@ -29,6 +29,18 @@ from .base import BasePage
 NAV = ("播放", "音质", "下载", "账号", "关于")
 
 
+#: 倍速档位 / 歌词偏移档位（毫秒）/ 睡眠时长（分钟）
+RATES = (0.75, 1.0, 1.25, 1.5, 2.0)
+SLEEP_MINUTES = (0, 15, 30, 60)
+
+
+def _index_of(values: tuple, value) -> int:
+    try:
+        return values.index(value)
+    except ValueError:
+        return min(1, len(values) - 1)
+
+
 def _disabled(widget: QWidget) -> QWidget:
     """未实现的开关：直接置灰，别让它看起来能用。"""
     widget.setEnabled(False)
@@ -146,6 +158,15 @@ class SettingsPage(BasePage):
         self.sw_fade = Switch(bool(self.settings.get("fade", True)))
         self.sw_fade.toggled.connect(lambda on: self.settings.set("fade", bool(on)))
 
+        self.cb_rate = self._combo(["0.75x", "1.0x", "1.25x", "1.5x", "2.0x"],
+                                   _index_of(RATES, float(self.settings.get("playback_rate", 1.0))))
+        self.cb_rate.currentIndexChanged.connect(
+            lambda i: self.settings.set("playback_rate", RATES[i]))
+
+        self.cb_sleep = self._combo(["关闭", "15 分钟", "30 分钟", "60 分钟"], 0)
+        self.cb_sleep.currentIndexChanged.connect(
+            lambda i: self.settings.set("sleep_minutes", SLEEP_MINUTES[i]))
+
         self.cb_view = self._combo(["唱片 + 歌词", "纯歌词", "纯封面"],
                                    int(self.settings.get("player_view", 0)))
         self.cb_view.currentIndexChanged.connect(
@@ -155,6 +176,8 @@ class SettingsPage(BasePage):
             ("外观主题", "切换后重启应用生效", self.cb_theme),
             ("播放页默认模式", "进入播放页时使用的展示方式", self.cb_view),
             ("记忆播放位置", "下次听同一首歌时从上次的进度继续", self.sw_memory),
+            ("播放速度", "0.75x – 2.0x", self.cb_rate),
+            ("睡眠定时器", "到点自动暂停，只对本次运行有效", self.cb_sleep),
             ("淡入淡出", "切歌时做 300ms 的音量渐入", self.sw_fade),
         ])
 

@@ -168,6 +168,8 @@ class TrackDelegate(QStyledItemDelegate):
 
 class TrackTable(QTableView):
     trackActivated = pyqtSignal(object)     # Track
+    playNextRequested = pyqtSignal(object)  # 下一首播放
+    queueAppendRequested = pyqtSignal(object)  # 加到队列末尾
 
     def __init__(self, tracks: list[Track] | None = None,
                  parent=None):
@@ -218,6 +220,23 @@ class TrackTable(QTableView):
     # ---- 数据 ----
     def set_tracks(self, tracks: list[Track]) -> None:
         self._model.set_tracks(tracks)
+
+    def contextMenuEvent(self, event) -> None:
+        index = self.indexAt(event.pos())
+        if not index.isValid():
+            return
+        track = self._model.track_at(index.row())
+        if track is None:
+            return
+
+        menu = QMenu(self)
+        act_next = menu.addAction("下一首播放")
+        act_queue = menu.addAction("加到队列末尾")
+        chosen = menu.exec(event.globalPos())
+        if chosen is act_next:
+            self.playNextRequested.emit(track)
+        elif chosen is act_queue:
+            self.queueAppendRequested.emit(track)
         self._sync_height()
 
     def set_playing(self, track: Track | None) -> None:
