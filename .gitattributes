@@ -1,0 +1,13 @@
+# 统一换行：源码入库用 LF，检出时按平台
+* text=auto eol=lf
+
+# 二进制，别做换行转换
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.ico binary
+*.7z binary
+*.zip binary
+
+# 截图是验收证据，diff 里不用展开
+shots/*.png -diff
