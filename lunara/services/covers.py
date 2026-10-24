@@ -65,7 +65,7 @@ class CoverService(QObject):
     """按 ``seed`` 索引封面；同一个 seed 只下载一次。"""
 
     #: 封面已就绪（参数是 seed），控件据此重绘
-    ready = pyqtSignal(int)
+    ready = pyqtSignal("qint64")      # seed 就是歌曲 id，可能是 10 位数
     #: 内部用：loop 线程 → 主线程传 bytes
     _bytes_ready = pyqtSignal(int, object)
 

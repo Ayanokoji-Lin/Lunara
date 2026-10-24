@@ -18,7 +18,7 @@ class GridPage(BasePage):
     COLS = 5
 
     #: 点了某张卡片（参数是 ``CardItem.seed``，调用方自己解释成 id）
-    cardActivated = pyqtSignal(int)
+    cardActivated = pyqtSignal("qint64")   # 歌单/专辑 id 会超过 2^31，不能用 int
 
     def __init__(self, parent: QWidget | None = None):
         super().__init__(parent=parent)

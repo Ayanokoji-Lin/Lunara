@@ -46,9 +46,9 @@ class SearchPage(BasePage):
     #: 某个 Tab 需要真实数据（关键词, Tab 下标）
     resultsRequested = pyqtSignal(str, int)
     #: 点歌单卡片 → 打开详情
-    playlistActivated = pyqtSignal(int)
-    artistActivated = pyqtSignal(int)
-    albumActivated = pyqtSignal(int)
+    playlistActivated = pyqtSignal("qint64")
+    artistActivated = pyqtSignal("qint64")
+    albumActivated = pyqtSignal("qint64")
     moreRequested = pyqtSignal()      # 单曲列表「加载更多」
     suggestRequested = pyqtSignal(str)  # 空态里的推荐关键词
 

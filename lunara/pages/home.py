@@ -34,7 +34,7 @@ def _clear(layout: QVBoxLayout) -> None:
 
 
 class HomePage(BasePage):
-    playlistActivated = pyqtSignal(int)     # playlist id
+    playlistActivated = pyqtSignal("qint64")     # playlist id 会超过 2^31
 
     COLS = 5
 
