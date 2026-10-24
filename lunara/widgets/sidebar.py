@@ -194,7 +194,11 @@ class Sidebar(QFrame):
             widget.deleteLater()
         self._group_widgets.clear()
 
-        for key in [k for k in self._items if k.startswith("myplaylist:")]:
+        # 演示分组的 key 是 ``playlist:N``，真实歌单是 ``myplaylist:<id>``。
+        # 两批都要清掉：只清 myplaylist 的话，切到真实歌单后 ``_items`` 里还留着
+        # 已被 deleteLater 的演示按钮，点任何导航项都会 RuntimeError。
+        for key in [k for k in self._items
+                    if k.startswith(("playlist:", "myplaylist:"))]:
             self._items.pop(key, None)
 
         # 插到末尾的 stretch 之前
@@ -265,5 +269,12 @@ class Sidebar(QFrame):
         self.navigate.emit(key)
 
     def select(self, key: str) -> None:
+        dead: list[str] = []
         for k, w in self._items.items():
-            w.setChecked(k == key)
+            try:
+                w.setChecked(k == key)
+            except RuntimeError:
+                # 控件已被销毁（分组重建过）：记下来，遍历完统一剔除
+                dead.append(k)
+        for k in dead:
+            self._items.pop(k, None)
