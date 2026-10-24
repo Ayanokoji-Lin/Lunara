@@ -61,6 +61,8 @@
 | P7 收尾 | ✅ 完成 | 音质接线、错误细条、首页失败重试 |
 | P8 歌手页 / 专辑页 | ✅ 完成 | 搜「周杰伦」点卡片：50 首热门 / 13 首专辑曲目 |
 
+> P9–P13（喜欢同步、搜索分页、本地播放、亮色主题、打包）记录在 `docs/PLAN-REMAINING.md`。
+
 ### P0 · 适配层与模块（无 UI 改动）✅
 
 **做了什么**
@@ -237,30 +239,6 @@ play() → urlRequested(seq, track) → MainWindow 用 QtAsyncBridge 调 PlayerU
 seek 到 160222ms 实际落在 160654ms，暂停生效；截图 `shots/21_playing_live.png`。
 另有 15 项内核逻辑单测（时钟推进、单曲循环、连切竞态、试听标记）。
 
-### P6.5 · 音频内核替换 ✅
-
-**做法：双引擎，对外契约不变**
-- `Player(engine="auto"|"media"|"clock")`：能建 `QMediaPlayer` 就用 media，
-  否则退时钟（无音频设备、测试、演示曲目）。
-- `Track.remote` 区分线上曲目与 `data.py` 的演示曲目：演示曲目永远走时钟，不联网。
-- 6 个信号 + 8 个方法签名一个没改，页面零改动（只修了 `PlayerBar._on_seek` 用真实时长）。
-
-**异步直链怎么接**
-```
-play() → urlRequested(seq, track) → MainWindow 用 QtAsyncBridge 调 PlayerUrlService
-       → set_source(seq, url, trial) 或 resolve_failed(seq, msg)
-```
-`seq` 单调递增，`set_source` 里比对，迟到结果直接丢——连续切歌不串台。
-
-**踩到的坑**
-- `_load_current` 里又请求了一次直链，和 `play()` 重复 → 改成只清音源，请求统一由 `play()` 触发。
-- `seek` 原来用 `track.duration_ms` 钳制，真实时长比接口值长/短时会跳错位置 → 统一走 `Player.duration_ms`。
-- `QMediaPlayer` 首帧要缓冲，连切后 2 秒内 `position` 还是 0 属正常，别误判成卡住。
-
-**验收**：热歌榜首曲真实播放，时长 320.4s（接口 320s），3 秒后位置 1228ms，
-seek 到 160222ms 实际落在 160654ms，暂停生效；截图 `shots/21_playing_live.png`。
-另有 15 项内核逻辑单测（时钟推进、单曲循环、连切竞态、试听标记）。
-
 ### P7 · 收尾 ✅
 
 - **音质偏好接线**：设置页 4 档下拉 → `QualityLevel`，播放走 `play_quality`、下载走 `download_quality`；
@@ -363,10 +341,6 @@ P5b 改动 widgets/sidebar.py（+set_my_playlists）  main_window.py（登录后
      新增 api/models/user.py（UserPlaylist）+ modules/user.get_user_playlists     ✅
      改动 services/catalog.py（split_user_playlists）  api/models/playlist.py（容忍 null）✅
      测试 tests/test_catalog.py 补 3 项  tools/verify_account_ui.py                 ✅
-P6.5 改动 core/player.py（双引擎 + 直链注入 + duration_ms）  data.py（Track.remote）  ✅
-     改动 services/catalog.py（标记 remote）  services/download/store.py（同上）        ✅
-     改动 widgets/player_bar.py（seek 用真实时长）  main_window.py（解析注入 + 错误条） ✅
-     测试 tests/test_player_logic.py（15 项）  tools/verify_playback.py                  ✅
 P6.5 改动 core/player.py（双引擎 + 直链注入 + duration_ms）  data.py（Track.remote）  ✅
      改动 services/catalog.py（标记 remote）  services/download/store.py（同上）        ✅
      改动 widgets/player_bar.py（seek 用真实时长）  main_window.py（解析注入 + 错误条） ✅
