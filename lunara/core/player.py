@@ -83,7 +83,37 @@ class Player(QObject):
         self._timer.setInterval(100)
         self._timer.timeout.connect(self._tick)
 
+        # 淡入：切歌/开始播放时把音量从 0 拉到目标，300ms 分 6 步
+        self._fade_enabled = True
+        self._fade_step = 0
+        self._fade_timer = QTimer(self)
+        self._fade_timer.setInterval(50)
+        self._fade_timer.timeout.connect(self._on_fade_step)
+
     # ---------------- 引擎 ----------------
+    def set_fade(self, enabled: bool) -> None:
+        """淡入淡出开关（设置页控制）。"""
+        self._fade_enabled = bool(enabled)
+        if not enabled and self._audio is not None:
+            self._audio.setVolume(self.volume / 100)
+
+    def _fade_in(self) -> None:
+        if not self._fade_enabled or self._audio is None:
+            return
+        self._fade_step = 0
+        self._audio.setVolume(0.0)
+        self._fade_timer.start()
+
+    def _on_fade_step(self) -> None:
+        if self._audio is None:
+            self._fade_timer.stop()
+            return
+        self._fade_step += 1
+        ratio = min(1.0, self._fade_step / 6)
+        self._audio.setVolume(self.volume / 100 * ratio)
+        if ratio >= 1.0:
+            self._fade_timer.stop()
+
     def _setup_media(self) -> None:
         self._media = QMediaPlayer(self)
         self._audio = QAudioOutput(self)
@@ -255,9 +285,13 @@ class Player(QObject):
 
     def _request_url(self, track: Track) -> None:
         self._seq += 1
-        self._pending_seek_ms = None
         self._source_track_id = None
         self.urlRequested.emit(self._seq, track)
+
+    def set_resume_position(self, ms: int) -> None:
+        """切歌后要恢复到的位置（记忆播放位置用）。"""
+        if ms > 0:
+            self._pending_seek_ms = ms
 
     def set_source(self, seq: int, url: str, trial: bool = False) -> None:
         """上层解析成功后调用；``seq`` 不是最新一次就丢弃。"""
@@ -274,6 +308,7 @@ class Player(QObject):
             self.trialModeChanged.emit(trial)
 
         if self._playing:
+            self._fade_in()
             self._media.play()
 
     def resolve_failed(self, seq: int, message: str) -> None:
@@ -398,6 +433,7 @@ class Player(QObject):
 
     def shutdown(self) -> None:
         self._timer.stop()
+        self._fade_timer.stop()
         self._playing = False
         if self._media is not None:
             self._media.stop()

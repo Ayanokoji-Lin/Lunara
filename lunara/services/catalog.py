@@ -14,6 +14,7 @@ from dataclasses import dataclass
 from ..api.models.personalized import NewSongEntry, RecommendedPlaylist
 from ..api.models.playlist import PlaylistDetail
 from ..api.models.album import AlbumDetail
+from ..api.models.dj import DjProgram
 from ..api.models.artist import ArtistDetail
 from ..api.models.search import AlbumHit, ArtistHit, PlaylistHit
 from ..api.models.user import UserPlaylist
@@ -214,3 +215,24 @@ def to_playlist_from_album(detail: AlbumDetail) -> Playlist:
         cover_url=album.pic_url,
         tracks=[to_track(song) for song in detail.songs],
     )
+
+
+def to_program_track(program: DjProgram) -> Track | None:
+    """播客单集 → Track（单集 id 能直接走直链解析）。"""
+    if program.song_id <= 0:
+        return None
+    return Track(
+        id=program.song_id,
+        title=program.song_name,
+        artist=program.radio_name,
+        album="星轨播客",
+        duration=0,                    # 上游没给，交给播放器读真实时长
+        hue=hue_for(program.song_id),
+        cover_url=program.pic_url,
+        remote=True,
+    )
+
+
+def to_card_from_track(track: Track) -> CardItem:
+    return CardItem(seed=track.id, hue=track.hue, title=track.title,
+                    subtitle=track.artist, cover_url=track.cover_url)

@@ -96,6 +96,12 @@ USER_PLAYLIST = Endpoint(
     "参数 uid,limit,offset；返回 playlist[] 与 more（需要登录 Cookie）",
 )
 
+DJ_RECOMMEND = Endpoint(
+    "/api/personalized/djprogram",
+    True,
+    "推荐单集：返回 result[]，每项 program.mainSong 是音频、program.radio 是所属电台",
+)
+
 #: 歌手详情：路径里带 id，调用时用 ``ARTIST_DETAIL_PATH.format(artist_id=...)`` 拼 Endpoint
 ARTIST_DETAIL_PATH = "/api/v1/artist/{artist_id}"
 

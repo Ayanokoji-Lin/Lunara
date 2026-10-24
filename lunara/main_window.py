@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import random
 
 from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtGui import QColor, QKeySequence, QShortcut
@@ -19,11 +20,7 @@ from PyQt6.QtWidgets import (
 from .api import aclose_client, get_client
 from .api.core import logging as api_log
 from .api.modules.album import get_album
-from .api.modules.song import like_song
-from .api.modules.song import like_song
-from .api.modules.artist import get_artist
-from .api.modules.album import get_album
-from .api.modules.song import like_song
+from .api.modules.dj import get_recommend_programs
 from .api.modules.song import like_song
 from .api.modules.artist import get_artist
 from .api.modules.lyric import get_lyric
@@ -39,7 +36,7 @@ from .api.modules.search import (
 )
 from .core.player import Player
 from .data import PLAYLISTS, TRACKS, Playlist, Track, demo_playlist, is_demo_playlist
-from .pages.base import EmptyPage
+from .pages.grid import GridPage
 from .pages.download import DownloadPage
 from .pages.home import HomePage
 from .pages.now_playing import NowPlayingPage
@@ -51,19 +48,23 @@ from .services.async_bridge import run_sync, shutdown as shutdown_bridge
 from .services.covers import covers
 from .services.download.service import DownloadService
 from .services.error_text import error_text
-from .services.error_text import error_text
 from .services.download.store import DownloadStore
 from .services.player_url.service import PlayerUrlService
 from .services.player_url.types import ResolveOutcome
-from .services.player_url.types import ResolveOutcome
+from .services.recent import RecentStore
 from .services.settings_store import SettingsStore
 from .services.catalog import (
+    CardItem,
     SearchPayload,
     split_user_playlists,
+    to_card_from_track,
     to_playlist_from_album,
     to_playlist_from_artist,
+    to_program_track,
+    to_card_from_track,
     to_playlist_from_album,
     to_playlist_from_artist,
+    to_program_track,
     to_album_card,
     to_artist_card,
     to_playlist,
@@ -83,18 +84,10 @@ from .widgets.topbar import TopBar
 SHADOW_MARGIN = 18
 
 # 页面索引
-P_HOME, P_PLAYLIST, P_SEARCH, P_SETTINGS, P_NOW, P_EMPTY, P_DOWNLOAD = range(7)
+P_HOME, P_PLAYLIST, P_SEARCH, P_SETTINGS, P_NOW, P_DOWNLOAD, P_GRID = range(7)
 
 #: 单曲搜索每页条数（「加载更多」按这个步进）
 SEARCH_PAGE_SIZE = 30
-
-EMPTY_PAGES = {
-    "podcast": ("星轨播客", "订阅你喜欢的播客，让夜晚有声音陪着。", "fa5s.podcast"),
-    "video": ("潮汐视频", "月海实录、现场演出与 4K 沉浸影像。", "fa5s.film"),
-    "roam": ("私人漫游", "沿着你的星轨一直播放，不重复、不打断。", "fa5s.compass"),
-    "cloud": ("我的星云", "云盘里空空如也，上传音乐即可随处播放。", "fa5s.cloud"),
-}
-
 
 class MainWindow(QWidget):
     def __init__(self, parent: QWidget | None = None):
@@ -177,11 +170,11 @@ class MainWindow(QWidget):
         self.search_page = SearchPage(self.player)
         self.settings_page = SettingsPage(self._settings)
         self.now_playing = NowPlayingPage(self.player)
-        self.empty_page = EmptyPage("星轨播客", "", "fa5s.podcast")
+        self.grid_page = GridPage()
         self.download_page = DownloadPage(self.player, self._downloads, self._settings)
         for page in (self.home, self.playlist_page, self.search_page,
-                     self.settings_page, self.now_playing, self.empty_page,
-                     self.download_page):
+                     self.settings_page, self.now_playing,
+                     self.download_page, self.grid_page):
             self.stack.addWidget(page)
 
         self._history: list[int] = [P_HOME]
@@ -209,8 +202,13 @@ class MainWindow(QWidget):
         self.player.errorOccurred.connect(self._on_player_error)
         self.player.trialModeChanged.connect(self._on_trial_changed)
         self.player.likeChanged.connect(self._on_like_changed)
+        self.player.trackChanged.connect(self._on_track_changed)
+        self.player.positionChanged.connect(self._remember_position)
+        self.player.set_fade(bool(self._settings.get("fade", True)))
+        self.grid_page.cardActivated.connect(self._on_grid_card)
+        self.home.hdr_playlists.moreClicked.connect(self._open_more_playlists)
+        self.home.hdr_news.moreClicked.connect(self._open_more_songs)
         self.playlist_page.downloadRequested.connect(self._enqueue_downloads)
-        self.playlist_page.favRequested.connect(self._on_fav_requested)
         self.download_page.finished.connect(self._on_download_finished)
         self._settings.changed.connect(self._on_setting_changed)
         self.now_playing.set_mode(int(self._settings.get("player_view", 0)))
@@ -248,6 +246,15 @@ class MainWindow(QWidget):
         self._session: SessionService | None = None
         self._liked_id: int | None = None
         self._home_retried = False
+        self._recommended: list[Playlist] = []
+        self._grid_mode = ""
+        self._podcast_tracks: list[Track] = []
+        self._more_tracks: list[Track] = []
+        self._recent = RecentStore()
+        self._resume: dict[str, int] = dict(self._settings.get("resume_positions") or {})
+        self._resume_dirty = False
+        self._resume: dict[str, int] = dict(self._settings.get("resume_positions") or {})
+        self._resume_dirty = False
         self._rolling_back_like = False
         self._search_offsets: dict[tuple[str, int], int] = {}
         self._restore_login()
@@ -292,14 +299,13 @@ class MainWindow(QWidget):
             self.playlist_page.set_playlist(pl, TRACKS[:8], title="我喜欢的音乐")
             self._show(P_PLAYLIST)
         elif key == "recent":
-            pl = Playlist(0, "最近播放", "蝶恋", 96_000, 214, "最近")
-            self.playlist_page.set_playlist(pl, TRACKS[2:12], title="最近播放")
-            self._show(P_PLAYLIST)
+            self._open_recent()
         elif key == "local":
             self._show(P_DOWNLOAD)
-        elif key in EMPTY_PAGES:
-            self.empty_page.configure(*EMPTY_PAGES[key])
-            self._show(P_EMPTY)
+        elif key == "podcast":
+            self._open_podcast()
+        elif key == "roam":
+            self._start_roam()
 
     def open_playlist(self, pid: int) -> None:
         """打开歌单：先切页（保留上一屏内容），再异步换成真实数据。
@@ -359,6 +365,7 @@ class MainWindow(QWidget):
 
     def _apply_home(self, data: tuple[list[Playlist], list[Track]]) -> None:
         playlists, tracks = data
+        self._recommended = list(playlists)
         self.home.set_playlists(playlists)
         self.home.set_new_songs(tracks)
 
@@ -482,10 +489,157 @@ class MainWindow(QWidget):
             self.banner.show_message("这首歌只提供 45 秒试听片段", level="warning",
                                      timeout_ms=5000)
 
-    # ================= 下载 =================
-    def _on_fav_requested(self) -> None:
-        self._show_error("收藏暂不可用：接口返回 405（操作过于频繁）")
+    # ================= 播客 / 更多 / 漫游 / 最近 =================
+    def _open_podcast(self) -> None:
+        self._show(P_GRID)
+        self.grid_page.configure("星轨播客", "推荐单集 · 来自网易云电台", [])
+        self._bridge.submit(
+            self._fetch_programs(),
+            on_success=self._apply_programs,
+            on_error=self._on_podcast_error,
+        )
 
+    async def _fetch_programs(self):
+        return await get_recommend_programs(get_client())
+
+    def _apply_programs(self, data) -> None:
+        tracks = [track for track in (to_program_track(p) for p in data.result) if track]
+        self._podcast_tracks = tracks
+        self._grid_mode = "podcast"
+        self.grid_page.configure(
+            "星轨播客", f"推荐单集 · 共 {len(tracks)} 期",
+            [to_card_from_track(t) for t in tracks],
+            empty_text="暂时没有推荐单集，稍后再试",
+        )
+
+    def _on_podcast_error(self, error: BaseException) -> None:
+        self._show_error(f"播客加载失败：{error_text(error)}")
+        self.grid_page.configure("星轨播客", "加载失败", [], empty_text="播客加载失败，稍后再试")
+
+    def _open_more_playlists(self) -> None:
+        self._show(P_GRID)
+        self.grid_page.configure("推荐歌单", "正在加载…", [])
+        self._bridge.submit(
+            self._fetch_more_playlists(),
+            on_success=self._apply_more_playlists,
+            on_error=self._on_playlist_error,
+        )
+
+    async def _fetch_more_playlists(self):
+        items = await get_recommended_playlists(get_client(), limit=30)
+        return [
+            CardItem(seed=pl.id, hue=pl.hue, title=pl.title,
+                     subtitle=pl.author, cover_url=pl.cover_url)
+            for pl in (to_playlist_card(item) for item in items)
+        ]
+
+    def _apply_more_playlists(self, cards) -> None:
+        self._grid_mode = "playlists"
+        self.grid_page.configure("推荐歌单", f"共 {len(cards)} 个 · 按你的星轨生成", list(cards))
+
+    def _open_more_songs(self) -> None:
+        self._show(P_GRID)
+        self.grid_page.configure("新歌速递", "正在加载…", [])
+        self._bridge.submit(
+            self._fetch_more_songs(),
+            on_success=self._apply_more_songs,
+            on_error=self._on_search_error,
+        )
+
+    async def _fetch_more_songs(self):
+        return await get_new_songs(get_client(), limit=30)
+
+    def _apply_more_songs(self, entries) -> None:
+        tracks = [t for t in (to_track_from_newsong(e) for e in entries) if t]
+        self._more_tracks = tracks
+        self._grid_mode = "songs"
+        self.grid_page.configure("新歌速递", f"共 {len(tracks)} 首 · 本周新增",
+                                 [to_card_from_track(t) for t in tracks])
+
+    def _on_grid_card(self, seed: int) -> None:
+        if self._grid_mode == "podcast":
+            track = next((t for t in self._podcast_tracks if t.id == seed), None)
+            if track is not None:
+                self.player.play_track(track, self._podcast_tracks)
+        elif self._grid_mode == "songs":
+            track = next((t for t in self._more_tracks if t.id == seed), None)
+            if track is not None:
+                self.player.play_track(track, self._more_tracks)
+        elif self._grid_mode == "playlists":
+            self.open_playlist(seed)
+
+    def _start_roam(self) -> None:
+        if not self._recommended:
+            self._show_error("还没有可漫游的内容，等首页加载完再试")
+            return
+        pid = random.choice(self._recommended).id
+        self._show(P_PLAYLIST)
+        self._bridge.submit(
+            self._fetch_roam(pid),
+            on_success=self._apply_roam,
+            on_error=self._on_playlist_error,
+        )
+
+    async def _fetch_roam(self, pid: int):
+        playlist = to_playlist(await get_playlist_detail(get_client(), pid))
+        tracks = list(playlist.tracks)
+        random.shuffle(tracks)
+        picked = tracks[:50]
+        roam = Playlist(id=playlist.id, title="私人漫游", author="来自你的星轨",
+                        plays=0, hue=playlist.hue, tag="漫游",
+                        desc="随机挑了一些你可能喜欢的歌，每次都不一样。",
+                        cover_url=playlist.cover_url, tracks=picked)
+        return roam
+
+    def _apply_roam(self, playlist: Playlist) -> None:
+        self.playlist_page.set_playlist(
+            playlist, list(playlist.tracks), title="私人漫游",
+            subtitle=f"随机 {len(playlist.tracks)} 首 · 每次都不一样", chip="漫游")
+        self._show(P_PLAYLIST)
+        if playlist.tracks:
+            self.player.set_queue(list(playlist.tracks), 0, autoplay=True)
+
+    def _open_recent(self) -> None:
+        tracks = self._recent.load()
+        playlist = Playlist(id=0, title="最近播放", author="本地记录", plays=0,
+                            hue=214, tag="最近")
+        self.playlist_page.set_playlist(
+            playlist, tracks, title="最近播放",
+            subtitle=f"最近 {len(tracks)} 首 · 只记在本机", chip="最近")
+        self._show(P_PLAYLIST)
+        if not tracks:
+            self.banner.show_message("还没有播放记录，随便听一首就有了", level="info",
+                                     timeout_ms=4000)
+
+    def _on_track_changed(self, track) -> None:
+        """切歌：记进「最近播放」，并按设置恢复上次的进度。"""
+        if track is None or track.id <= 0:
+            return
+        self._recent.add(track)
+        if not self._settings.get("memory_position", True):
+            return
+        saved = self._resume.get(str(track.id), 0)
+        if saved > 3000:
+            self.player.set_resume_position(saved)
+
+    def _remember_position(self, position: int, duration: int) -> None:
+        track = self.player.current
+        if track is None or track.id <= 0 or not self.player.is_playing:
+            return
+        if position < 3000 or (duration and position > duration - 5000):
+            return
+        self._resume[str(track.id)] = position
+        self._resume_dirty = True
+        if len(self._resume) > 200:
+            self._resume = dict(list(self._resume.items())[-200:])
+
+    def _flush_resume(self) -> None:
+        if not self._resume_dirty:
+            return
+        self._resume_dirty = False
+        self._settings.set("resume_positions", self._resume)
+
+    # ================= 下载 =================
     def _enqueue_downloads(self, tracks: list[Track]) -> None:
         if not tracks:
             return
@@ -521,8 +675,16 @@ class MainWindow(QWidget):
             self.download_page.set_download_dir(str(value))
         elif key == "player_view":
             self.now_playing.set_mode(int(value))
+        elif key == "fade":
+            self.player.set_fade(bool(value))
+        elif key == "fade":
+            self.player.set_fade(bool(value))
         elif key == "player_view":
             self.now_playing.set_mode(int(value))
+        elif key == "fade":
+            self.player.set_fade(bool(value))
+        elif key == "fade":
+            self.player.set_fade(bool(value))
 
     # ================= 账号 =================
     def _restore_login(self) -> None:
@@ -617,6 +779,7 @@ class MainWindow(QWidget):
         await covers().aclose()
 
     def closeEvent(self, event) -> None:
+        self._flush_resume()
         try:
             self.player.shutdown()
         except Exception:  # noqa: BLE001

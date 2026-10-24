@@ -94,14 +94,12 @@ class Sidebar(QFrame):
     NAV_MAIN = [
         ("home", "月海拾音", "fa5s.moon"),
         ("podcast", "星轨播客", "fa5s.podcast"),
-        ("video", "潮汐视频", "fa5s.film"),
         ("roam", "私人漫游", "fa5s.compass"),
     ]
     NAV_MINE = [
         ("liked", "我喜欢的音乐", "fa5s.star"),
         ("recent", "最近播放", "fa5s.history"),
         ("local", "本地下载", "fa5s.download"),
-        ("cloud", "我的星云", "fa5s.cloud"),
     ]
     GROUPS = [
         ("创建的歌单", ["深夜飞行手册", "月海拾音 · 私藏", "凌晨四点的城市"]),
