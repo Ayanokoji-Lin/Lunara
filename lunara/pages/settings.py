@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtWidgets import (
+    QMessageBox,
     QComboBox,
     QFileDialog,
     QFrame,
@@ -334,8 +335,63 @@ class SettingsPage(BasePage):
         desc.setObjectName("BodyText")
         desc.setAlignment(Qt.AlignmentFlag.AlignCenter)
         v.addWidget(desc)
+
+        self.sw_tray = Switch(bool(self.settings.get("close_to_tray", True)))
+        self.sw_tray.toggled.connect(
+            lambda on: self.settings.set("close_to_tray", bool(on)))
+        tray_row = QHBoxLayout()
+        tray_row.setSpacing(10)
+        tray_row.addStretch(1)
+        tray_label = QLabel("关闭窗口时最小化到托盘")
+        tray_label.setObjectName("BodyText")
+        tray_row.addWidget(tray_label)
+        tray_row.addWidget(self.sw_tray)
+        tray_row.addStretch(1)
+        v.addLayout(tray_row)
+
+        actions = QHBoxLayout()
+        actions.setSpacing(10)
+        actions.addStretch(1)
+
+        btn_cache = QPushButton("清理封面缓存")
+        btn_cache.setObjectName("GhostPill")
+        btn_cache.setCursor(Qt.CursorShape.PointingHandCursor)
+        btn_cache.clicked.connect(self._clear_cache)
+        actions.addWidget(btn_cache)
+
+        btn_logs = QPushButton("打开日志目录")
+        btn_logs.setObjectName("GhostPill")
+        btn_logs.setCursor(Qt.CursorShape.PointingHandCursor)
+        btn_logs.clicked.connect(self._open_logs)
+        actions.addWidget(btn_logs)
+
+        actions.addStretch(1)
+        v.addLayout(actions)
         v.addStretch(1)
         return panel
+
+    def _clear_cache(self) -> None:
+        from ..services.covers import CACHE_DIR
+
+        freed = 0
+        if CACHE_DIR.exists():
+            for path in CACHE_DIR.rglob("*"):
+                if path.is_file():
+                    try:
+                        freed += path.stat().st_size
+                        path.unlink()
+                    except OSError:
+                        pass
+        QMessageBox.information(self, "清理完成", f"已清理封面缓存 {freed / 1e6:.1f} MB")
+
+    def _open_logs(self) -> None:
+        from PyQt6.QtCore import QUrl
+        from PyQt6.QtGui import QDesktopServices
+
+        from ..api.core.logging import LOG_DIR
+
+        LOG_DIR.mkdir(parents=True, exist_ok=True)
+        QDesktopServices.openUrl(QUrl.fromLocalFile(str(LOG_DIR)))
 
     # ---------------- 导航 ----------------
     def switch(self, index: int) -> None:

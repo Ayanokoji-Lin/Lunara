@@ -41,12 +41,62 @@ ARGS = [
 ]
 
 
+#: 打包后可以安全删掉的大文件（调试用的 WebEngine 资源、非中文翻译）
+PRUNE_FILES = (
+    "PyQt6/Qt6/resources/qtwebengine_devtools_resources.debug.pak",
+    "PyQt6/Qt6/resources/qtwebengine_devtools_resources.pak",
+    "PyQt6/Qt6/resources/v8_context_snapshot.debug.bin",
+)
+KEEP_TRANSLATIONS = ("zh_CN", "zh_TW", "en", "qt_")
+
+
+def _prune(target: Path) -> float:
+    """把用不到的调试资源与多余翻译**挪出**包外（不删，避免批量删除被拦）。
+
+    调试用的 WebEngine 资源与「非中英文翻译」占了近 130MB，运行时一个都用不到。
+    """
+    internal = target / "_internal"
+    trash = target.parent / ".pruned"
+    freed = 0
+
+    def stash(path: Path) -> None:
+        nonlocal freed
+        if not path.exists() or not path.is_file():
+            return
+        try:
+            trash.mkdir(parents=True, exist_ok=True)
+            size = path.stat().st_size
+            shutil.move(str(path), str(trash / path.name))
+            freed += size
+        except (OSError, shutil.Error):
+            pass
+
+    for rel in PRUNE_FILES:
+        stash(internal / rel)
+
+    resources = internal / "PyQt6" / "Qt6" / "resources"
+    if resources.exists():
+        for path in resources.glob("*.debug.pak"):
+            stash(path)
+
+    translations = internal / "PyQt6" / "Qt6" / "translations"
+    if translations.exists():
+        for path in translations.glob("*.qm"):
+            if not any(key in path.name for key in KEEP_TRANSLATIONS):
+                stash(path)
+
+    return freed / 1e6
+
+
 def _clear_old() -> None:
-    """尽力清理历史备份；删不掉不影响本次构建。"""
+    """尽力清理历史备份；删不掉（被安全策略拦、文件被占用）都不影响本次构建。"""
     if not OLD_DIR.exists():
         return
     for item in OLD_DIR.iterdir():
-        shutil.rmtree(item, ignore_errors=True)
+        try:
+            shutil.rmtree(item, ignore_errors=True)
+        except BaseException:          # noqa: BLE001 - 清理失败不该中断打包
+            continue
 
 
 def _stash_previous() -> None:
@@ -74,8 +124,9 @@ def main() -> int:
 
     exe = DIST / "Lunara.exe"
     if exe.exists():
+        freed = _prune(DIST)
         size = sum(f.stat().st_size for f in DIST.rglob("*") if f.is_file()) / 1e6
-        print(f"完成：{exe}（整个目录 {size:.0f} MB）")
+        print(f"完成：{exe}（整个目录 {size:.0f} MB，精简掉 {freed:.0f} MB）")
         return 0
     print("!! 没有找到 dist/Lunara/Lunara.exe")
     return 1

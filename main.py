@@ -14,6 +14,7 @@ from PyQt6.QtWidgets import QApplication
 
 from lunara.main_window import MainWindow
 from lunara.services.settings_store import SettingsStore
+from lunara.services.single_instance import SingleInstance
 from lunara.theme import apply as apply_theme
 from lunara.theme import qss
 
@@ -66,7 +67,13 @@ def main() -> int:
     f.setPixelSize(12)
     app.setFont(f)
 
+    # 只允许一个实例：重复双击时把已有窗口唤到前面，而不是开第二个
+    guard = SingleInstance()
+    if not guard.try_lock():
+        return 0
+
     win = MainWindow()
+    guard.activated.connect(lambda: (win.showNormal(), win.raise_(), win.activateWindow()))
     win.show()
     return app.exec()
 

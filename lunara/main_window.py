@@ -224,10 +224,15 @@ class MainWindow(QWidget):
         self.search_page.set_history(list(self._settings.get("search_history") or []))
         QTimer.singleShot(1500, self._import_existing_files)
 
+        self._close_to_tray = bool(self._settings.get("close_to_tray", True))
+        self._tray_hinted = False
         self._tray = QSystemTrayIcon(
             QIcon(str(Path(__file__).resolve().parent.parent / "assets" / "icon.ico")), self)
         self._tray.setToolTip("Lunara")
+        self._tray.activated.connect(self._on_tray_activated)
+        self._tray.setContextMenu(self._build_tray_menu())
         self._tray.show()
+        self._restore_geometry()
 
         self._apply_download_limits()
 
@@ -706,6 +711,52 @@ class MainWindow(QWidget):
         if len(self._resume) > 200:
             self._resume = dict(list(self._resume.items())[-200:])
 
+    def _build_tray_menu(self):
+        from PyQt6.QtWidgets import QMenu
+
+        menu = QMenu(self)
+        menu.addAction("显示主窗口", self._show_from_tray)
+        menu.addSeparator()
+        menu.addAction("播放 / 暂停", self.player.toggle)
+        menu.addAction("上一首", self.player.prev_track)
+        menu.addAction("下一首", self.player.next_track)
+        menu.addSeparator()
+        menu.addAction("退出 Lunara", self._quit_from_tray)
+        return menu
+
+    def _on_tray_activated(self, reason) -> None:
+        if reason in (QSystemTrayIcon.ActivationReason.Trigger,
+                      QSystemTrayIcon.ActivationReason.DoubleClick):
+            self._show_from_tray()
+
+    def _show_from_tray(self) -> None:
+        self.showNormal()
+        self.raise_()
+        self.activateWindow()
+
+    def _quit_from_tray(self) -> None:
+        self._close_to_tray = False
+        self._tray.hide()
+        self.close()
+
+    def _restore_geometry(self) -> None:
+        raw = self._settings.get("window_geometry")
+        if not raw:
+            return
+        try:
+            from PyQt6.QtCore import QByteArray
+
+            self.restoreGeometry(QByteArray.fromBase64(str(raw).encode("ascii")))
+        except (TypeError, ValueError):
+            pass
+
+    def _save_geometry(self) -> None:
+        try:
+            data = bytes(self.saveGeometry().toBase64()).decode("ascii")
+        except (AttributeError, ValueError):
+            return
+        self._settings.set("window_geometry", data)
+
     def _apply_download_limits(self) -> None:
         self._downloads.set_limits(
             retries=int(self._settings.get("dl_retries", 3)),
@@ -837,6 +888,52 @@ class MainWindow(QWidget):
 
     def _save_queue(self) -> None:
         queue_store.save(list(self.player.queue), self.player.index)
+
+    def _build_tray_menu(self):
+        from PyQt6.QtWidgets import QMenu
+
+        menu = QMenu(self)
+        menu.addAction("显示主窗口", self._show_from_tray)
+        menu.addSeparator()
+        menu.addAction("播放 / 暂停", self.player.toggle)
+        menu.addAction("上一首", self.player.prev_track)
+        menu.addAction("下一首", self.player.next_track)
+        menu.addSeparator()
+        menu.addAction("退出 Lunara", self._quit_from_tray)
+        return menu
+
+    def _on_tray_activated(self, reason) -> None:
+        if reason in (QSystemTrayIcon.ActivationReason.Trigger,
+                      QSystemTrayIcon.ActivationReason.DoubleClick):
+            self._show_from_tray()
+
+    def _show_from_tray(self) -> None:
+        self.showNormal()
+        self.raise_()
+        self.activateWindow()
+
+    def _quit_from_tray(self) -> None:
+        self._close_to_tray = False
+        self._tray.hide()
+        self.close()
+
+    def _restore_geometry(self) -> None:
+        raw = self._settings.get("window_geometry")
+        if not raw:
+            return
+        try:
+            from PyQt6.QtCore import QByteArray
+
+            self.restoreGeometry(QByteArray.fromBase64(str(raw).encode("ascii")))
+        except (TypeError, ValueError):
+            pass
+
+    def _save_geometry(self) -> None:
+        try:
+            data = bytes(self.saveGeometry().toBase64()).decode("ascii")
+        except (AttributeError, ValueError):
+            return
+        self._settings.set("window_geometry", data)
 
     def _apply_download_limits(self) -> None:
         self._downloads.set_limits(
@@ -1021,6 +1118,8 @@ class MainWindow(QWidget):
             self.player.set_rate(float(value))
         elif key == "sleep_minutes":
             self._apply_sleep(int(value))
+        elif key == "close_to_tray":
+            self._close_to_tray = bool(value)
         elif key in ("dl_retries", "dl_speed_kbps"):
             self._apply_download_limits()
         elif key == "play_quality":
@@ -1031,6 +1130,8 @@ class MainWindow(QWidget):
             self.player.set_rate(float(value))
         elif key == "sleep_minutes":
             self._apply_sleep(int(value))
+        elif key == "close_to_tray":
+            self._close_to_tray = bool(value)
         elif key in ("dl_retries", "dl_speed_kbps"):
             self._apply_download_limits()
         elif key == "play_quality":
@@ -1043,6 +1144,8 @@ class MainWindow(QWidget):
             self.player.set_rate(float(value))
         elif key == "sleep_minutes":
             self._apply_sleep(int(value))
+        elif key == "close_to_tray":
+            self._close_to_tray = bool(value)
         elif key in ("dl_retries", "dl_speed_kbps"):
             self._apply_download_limits()
         elif key == "play_quality":
@@ -1053,6 +1156,8 @@ class MainWindow(QWidget):
             self.player.set_rate(float(value))
         elif key == "sleep_minutes":
             self._apply_sleep(int(value))
+        elif key == "close_to_tray":
+            self._close_to_tray = bool(value)
         elif key in ("dl_retries", "dl_speed_kbps"):
             self._apply_download_limits()
         elif key == "play_quality":
@@ -1204,6 +1309,15 @@ class MainWindow(QWidget):
     def closeEvent(self, event) -> None:
         self._flush_resume()
         self._save_queue()
+        self._save_geometry()
+        if self._close_to_tray and self._tray.isVisible():
+            event.ignore()
+            self.hide()
+            if not self._tray_hinted:
+                self._tray_hinted = True
+                self._tray.showMessage("Lunara 还在后台", "点托盘图标可以叫回来，右键有退出",
+                                       QSystemTrayIcon.MessageIcon.Information, 3000)
+            return
         try:
             self.player.shutdown()
         except Exception:  # noqa: BLE001
