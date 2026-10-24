@@ -39,7 +39,8 @@ from .api.modules.search import (
     search_songs,
 )
 from .core.player import Player
-from .data import PLAYLISTS, TRACKS, Playlist, Track, demo_playlist, is_demo_playlist
+from .data import (PLAYLISTS, TRACKS, DownloadTask, Playlist, Track,
+                   demo_playlist, is_demo_playlist)
 from .pages.grid import GridPage
 from .widgets.anim import fade_in
 from .pages.download import DownloadPage
@@ -191,6 +192,18 @@ class MainWindow(QWidget):
         # ---------------- 交互连接 ----------------
         self.sidebar.navigate.connect(self.navigate)
         self.home.playlistActivated.connect(self.open_playlist)
+        # 网格页（播客 / 新歌速递 / 更多歌单 / 歌手专辑）的点击统一走这里
+        self.grid_page.cardActivated.connect(self._on_grid_card)
+        self.home.hdr_playlists.moreClicked.connect(self._open_more_playlists)
+        self.home.hdr_news.moreClicked.connect(self._open_more_songs)
+
+        # 歌单页：头部「全部专辑 / 歌手」按钮、下载按钮、表格右键三项
+        self.playlist_page.actionRequested.connect(self._on_page_action)
+        self.playlist_page.downloadRequested.connect(self._enqueue_downloads)
+        for table in (self.playlist_page.table, self.search_page.table):
+            table.playNextRequested.connect(self._on_play_next)
+            table.queueAppendRequested.connect(self._on_queue_append)
+            table.likeManyRequested.connect(self._on_like_many)
         self.topbar.searchSubmitted.connect(self._on_search)
         self.topbar.searchChanged.connect(self._on_search_live)
         self.topbar.btn_cog.clicked.connect(lambda: self.navigate("settings"))

@@ -166,6 +166,9 @@ class DownloadRow(QFrame):
         return f"{t.speed:.1f} MB/s · {done} / {total} · {t.percent}%"
 
 
+MAX_ROWS = 80      # 列表一次最多渲染多少行
+
+
 class DownloadPage(BasePage):
     FILTERS = ("全部", "下载中", "已完成", "失败")
 
@@ -370,11 +373,19 @@ class DownloadPage(BasePage):
             empty.setFixedHeight(140)
             self._list.addWidget(empty)
         else:
-            for t in tasks:
+            # 一次最多建 80 行：任务表上千条时逐个建控件会卡死界面
+            for t in tasks[:MAX_ROWS]:
                 row = DownloadRow(t)
                 row.action.connect(self._on_action)
                 self._list.addWidget(row)
                 self._rows.append(row)
+
+            if len(tasks) > MAX_ROWS:
+                more = QLabel(f"还有 {len(tasks) - MAX_ROWS} 条未显示，用搜索或筛选缩小范围")
+                more.setObjectName("BodyText")
+                more.setAlignment(Qt.AlignmentFlag.AlignCenter)
+                more.setFixedHeight(60)
+                self._list.addWidget(more)
 
         self._update_summary()
 
