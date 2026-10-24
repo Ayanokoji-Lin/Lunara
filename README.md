@@ -103,3 +103,11 @@ UI 接真数据的排期与进度见 `docs/UI-INTEGRATION-PLAN.md`。
 （断点续传状态落 SQLite）后，`DownloadRow` 与页面逻辑不用改。
 
 界面截图见 `shots/`，架构与工程细节见 `docs/ARCHITECTURE.md`。
+
+## 版本管理
+
+- 分支只有 `main`，一个阶段一个提交，消息前缀用 `feat / fix / test / docs / chore`。
+- 入库：源码、`tests/fixtures`（真实回包，字段漂移时单测会先红）、`tools`、`docs`、`shots`。
+- 不入库：`.venv/`、`__pycache__/`、`.pytest_cache/`、`.secrets/`、`*.enc`、`covers/`、`.workbuddy-ai/`。
+- **登录态与主密钥永不入库**（P5 的 `session.enc` 已在 `.gitignore` 里）。
+- 回滚点：`git tag` 里的 `baseline-*` 标记了每个可验收的状态。
