@@ -6,15 +6,22 @@ from __future__ import annotations
 
 import os
 import sys
+from pathlib import Path
 
 from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QFont
+from PyQt6.QtGui import QFont, QIcon
 from PyQt6.QtWidgets import QApplication
 
 from lunara.main_window import MainWindow
 from lunara.services.settings_store import SettingsStore
 from lunara.theme import apply as apply_theme
 from lunara.theme import qss
+
+
+def asset_path(name: str) -> Path:
+    """打包后资源在 ``sys._MEIPASS``，源码运行时在项目根目录。"""
+    base = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent))
+    return base / "assets" / name
 
 
 def configure_webengine_proxy() -> None:
@@ -46,6 +53,7 @@ def main() -> int:
     app = QApplication(sys.argv)
     app.setApplicationName("Lunara")
     app.setApplicationDisplayName("Lunara")
+    app.setWindowIcon(QIcon(str(asset_path("icon.ico"))))
     app.setStyle("Fusion")          # Fusion 才能让 QSS 完全接管控件外观
 
     # 主题在窗口创建前生效：页面里不少颜色是在构造时写进内联样式的

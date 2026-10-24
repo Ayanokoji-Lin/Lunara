@@ -163,6 +163,16 @@ UI 接真数据的排期与进度见 `docs/UI-INTEGRATION-PLAN.md`，
   再点一次是幂等的（服务端按 `like=true` 再确认）。
 - **本地曲库扫描**：现在只能播「下载页里已完成的文件」，还没有扫描任意目录、读标签（`mutagen`）。
 
+## 图标
+
+`assets/icon.ico`（含 16–256 共 7 个尺寸）由 `tools/make_icon.py` 生成，
+画法与侧栏 Logo 同源：深空圆角底板 + 月光渐变弯月 + 两颗四角星。
+改颜色或造型就改脚本再跑一次，不用手工导出：
+
+```bash
+.venv/Scripts/python.exe tools/make_icon.py
+```
+
 ## 打包
 
 ```bash
@@ -170,7 +180,8 @@ UI 接真数据的排期与进度见 `docs/UI-INTEGRATION-PLAN.md`，
 dist/Lunara/Lunara.exe
 ```
 
-产物在 `dist/Lunara/`（约 583 MB，主要是 QtWebEngine 的 Chromium），不入库。
+产物在 `dist/Lunara/`（约 597 MB，主要是 QtWebEngine 的 Chromium），不入库。
+重新打包会把旧目录改名挪到 `dist/.old/`（删上千个文件太慢，也容易被打断）。
 想更小可以手动排除未用的 Qt 模块，或者去掉内嵌登录。
 
 ## 版本管理

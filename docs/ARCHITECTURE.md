@@ -11,6 +11,8 @@
 Lunara/
 ├─ main.py                  入口：QApplication、Fusion、QSS、字体、WebEngine 前置设置
 ├─ requirements.txt
+├─ assets/icon.ico          应用图标（tools/make_icon.py 生成，7 个尺寸）
+├─ assets/icon.ico          应用图标（tools/make_icon.py 生成，7 个尺寸）
 ├─ lunara/
 │  ├─ theme.py              THEME 令牌 + 全局 QSS 模板 + METRICS
 │  ├─ assets.py             程序化「月牙」封面（空态）、圆角/裁切、离线模糊
