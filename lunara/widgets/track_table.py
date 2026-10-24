@@ -223,6 +223,7 @@ class TrackTable(QTableView):
     # ---- 数据 ----
     def set_tracks(self, tracks: list[Track]) -> None:
         self._model.set_tracks(tracks)
+        self._sync_height()          # 行数变了必须重算高度，否则只剩表头（高度 40）
 
     def contextMenuEvent(self, event) -> None:
         index = self.indexAt(event.pos())
@@ -248,7 +249,6 @@ class TrackTable(QTableView):
             self.queueAppendRequested.emit(track)
         elif chosen is act_like:
             self.likeManyRequested.emit(picked)
-        self._sync_height()
 
     def set_playing(self, track: Track | None) -> None:
         self._model.set_playing(track.id if track else -1)
