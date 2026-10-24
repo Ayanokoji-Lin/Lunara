@@ -18,7 +18,7 @@ Lunara/
 │  ├─ main_window.py        无边框主窗口、四模块装配、导航、异步数据接线
 │  ├─ core/player.py        播放内核（虚拟时钟，可平滑替换为 QMediaPlayer）
 │  ├─ api/                  eapi 组包、异步请求层、接口模块与 pydantic 模型
-│  ├─ services/             直链决策、登录态、封面、歌词解析、模型适配、异步桥
+│  ├─ services/             直链决策、登录态、封面、歌词解析、下载、设置、模型适配、异步桥
 │  ├─ store/                TTLCache、AsyncSingleFlight
 │  ├─ widgets/              icons / common / cover / banner / sidebar / topbar /
 │  │                        player_bar / seek_slider / vinyl / lyrics / track_table /
@@ -249,7 +249,10 @@ STATE_STYLE = {...}   # chip 的 背景/文字/描边 三元组
   `"rgba(...)"` 字符串，颜色必须用 `(r,g,b,a)` 或 `#hex`，否则会渲染成纯黑。
 - 状态变化只刷新受影响的那一行（`_refresh_task`），只有离开当前筛选（如失败页点重试）
   才重建列表，避免点击时把正在被点击的 widget 一起销毁。
-- 进度由 `QTimer(500ms)` 推进，`isVisible()` 为假时直接 return（切走页面不空转）。
+- 进度不再由页面自己推进：`services/download/service.py` 在后台 loop 里流式下载，
+  每 250ms 发一次 `taskChanged`，页面只负责把事件套到行上。
+- 页面不持有权威状态：服务在主线程留一份镜像，UI 读它；真正下载的那份在 loop 线程，
+  两者只通过不可变事件通信。
 - 目录胶囊、行悬停都用 QSS（`QFrame#PathChip` / `QFrame#DownloadRow:hover`），
   不给容器设内联 `background`，避免样式级联吃掉子控件状态。
 
@@ -303,8 +306,6 @@ def paintEvent(self, event):
 
 - **接入真实音频**：`Player._tick` 换成 `QMediaPlayer.positionChanged`，`toggle/seek` 转发到播放器；
   `Player` 的对外信号保持不变，UI 零改动。直链已由 `services/player_url` 备好。
-- **真实下载**：`services/download.py`（流式 + Range 断点续传 + SQLite 任务表），
-  替换 `pages/download.py` 里的 `QTimer` 模拟。
 - **歌手页 / 专辑页**：搜索结果里这两类卡片现在只是占位点击，详情接口还没实测。
 - **曲库落库**：`data.py` 换成 SQLite + `mutagen` 读标签，扫描本地目录。
 - **亮色主题**：`LIGHT` 已备好，`qss(LIGHT)` + `repolish` 即可切换，但 `assets` 里的深空渐变需要按主题调整亮度。

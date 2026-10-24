@@ -34,17 +34,36 @@ class Track:
 
 @dataclass(slots=True)
 class DownloadTask:
-    """下载任务（演示用；真实实现应持久化到 SQLite 并断点续传）。"""
+    """下载任务（UI 唯一契约，同时作为 SQLite 行的内存镜像）。
+
+    持久化字段（id / state / bytes_* / file_path / 时间戳）由 ``services/download/store.py``
+    读写；``speed`` 只活在运行时，重启后归零。
+    """
     track: Track
-    size_mb: float
-    progress: float = 0.0          # 0..1
-    speed: float = 0.0             # MB/s
-    state: str = "downloading"     # downloading / paused / done / failed
+    id: int = 0                    # SQLite 自增主键；0 = 还没入库
+    quality: str = "lossless"      # QualityLevel.value
+    state: str = "queued"          # queued / downloading / paused / done / failed
+    bytes_total: int = 0           # 0 = 服务端没给 Content-Length
+    bytes_done: int = 0
+    file_path: str = ""            # 最终文件路径（开始下载时预留，续传不变）
     error: str = ""
+    speed: float = 0.0             # MB/s，仅运行时
+    created_at: float = 0.0
+    updated_at: float = 0.0
+
+    @property
+    def progress(self) -> float:
+        if self.bytes_total <= 0:
+            return 0.0
+        return max(0.0, min(1.0, self.bytes_done / self.bytes_total))
+
+    @property
+    def size_mb(self) -> float:
+        return self.bytes_total / 1_000_000
 
     @property
     def done_mb(self) -> float:
-        return self.size_mb * self.progress
+        return self.bytes_done / 1_000_000
 
     @property
     def percent(self) -> int:
@@ -151,19 +170,3 @@ for _pl in PLAYLISTS:
 for _i, _pl in enumerate(PLAYLISTS):
     _start = (_i * 3) % len(TRACKS)
     _pl.tracks = (TRACKS[_start:] + TRACKS[:_start])[: 8 + (_i % 5)]
-
-# 演示用：下载任务列表
-DOWNLOADS: list[DownloadTask] = []
-for _idx, _t in enumerate(TRACKS[:9]):
-    _task = DownloadTask(track=_t, size_mb=round(_t.duration * 0.042, 1))
-    if _idx < 3:
-        _task.progress = (0.18, 0.46, 0.72)[_idx]
-        _task.speed = (2.4, 1.8, 3.1)[_idx]
-    elif _idx == 3:
-        _task.progress, _task.state = 0.55, "paused"
-    elif _idx == 8:
-        _task.progress, _task.state = 0.30, "failed"
-        _task.error = "网络中断，已自动重试 3 次"
-    else:
-        _task.progress, _task.state = 1.0, "done"
-    DOWNLOADS.append(_task)

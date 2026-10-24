@@ -1,41 +1,45 @@
 """Lunara · 本地下载页
 
-三件事：任务总览（下载中 / 已完成 / 失败）、逐条进度与操作、目录与批量控制。
-演示态用 QTimer 推进进度；真实实现应接 QNetworkAccessManager / aria2，
-断点续传状态落 SQLite，UI 这层完全不用改。
+数据来源是 ``services.download.DownloadService``：页面不再自己推进进度，
+只做三件事——把任务画出来、把点击转成服务调用、把服务事件转成界面变化。
+
+状态：queued（排队）/ downloading / paused / done / failed。
 """
 from __future__ import annotations
 
-import random
+from pathlib import Path
 
-from PyQt6.QtCore import Qt, QTimer, pyqtSignal
-from PyQt6.QtGui import QCursor
+from PyQt6.QtCore import Qt, QUrl, pyqtSignal
+from PyQt6.QtGui import QDesktopServices
 from PyQt6.QtWidgets import (
     QFrame,
     QHBoxLayout,
     QLabel,
     QPushButton,
-    QToolTip,
     QVBoxLayout,
     QWidget,
 )
 
-from ..core.player import Player
-from ..data import DOWNLOADS, DownloadTask
+from ..data import DownloadTask, Track
+from ..services.download.naming import format_size
+from ..services.download.notice import NOTICE_TEXT, write_notice_file
+from ..services.download.service import DownloadEvent, DownloadService
+from ..services.settings_store import SettingsStore
 from ..theme import THEME
 from ..widgets.common import IconButton, font
 from ..widgets.cover import CoverArt
 from ..widgets.icons import pixmap
+from ..widgets.notice import InlineBanner
 from ..widgets.progress import ThinProgress
 from .base import BasePage
 
-DOWNLOAD_DIR = r"D:\Music\Lunara"
-
-STATE_TEXT = {"downloading": "下载中", "paused": "已暂停",
+STATE_TEXT = {"queued": "排队中", "downloading": "下载中", "paused": "已暂停",
               "done": "已完成", "failed": "失败"}
 STATE_STYLE = {
     "downloading": ("rgba(139, 92, 246, 0.16)", THEME["primary"],
                     "rgba(139, 92, 246, 0.30)"),
+    "queued": ("rgba(148, 163, 184, 0.12)", THEME["text_sub"],
+               "rgba(148, 163, 184, 0.22)"),
     "paused": ("rgba(148, 163, 184, 0.12)", THEME["text_sub"],
                "rgba(148, 163, 184, 0.22)"),
     "done": ("rgba(139, 92, 246, 0.10)", THEME["text_sub"],
@@ -58,7 +62,7 @@ class DownloadRow(QFrame):
         h.setSpacing(14)
 
         self.cover = CoverArt(48, 6)
-        self.cover.set_cover(task.track.seed, task.track.hue)
+        self.cover.set_cover(task.track.seed, task.track.hue, task.track.cover_url)
         h.addWidget(self.cover)
 
         col = QVBoxLayout()
@@ -81,7 +85,7 @@ class DownloadRow(QFrame):
         self.btn_folder = IconButton("fa5s.folder-open", THEME["text_sub"], 12, 28,
                                      "打开所在文件夹")
         self.btn_delete = IconButton("fa5s.trash-alt", THEME["text_sub"], 12, 28,
-                                     "删除任务")
+                                     "删除任务（不删除已下载文件）")
         for b in (self.btn_primary, self.btn_folder, self.btn_delete):
             top.addWidget(b)
         col.addLayout(top)
@@ -104,53 +108,73 @@ class DownloadRow(QFrame):
         else:
             self.action.emit("toggle", self.task)
 
+    # ------------------------------------------------------------------ #
     def refresh(self) -> None:
         t = self.task
         self.bar.set_value(t.progress)
-        self.bar.set_state(t.state)
+        self.bar.set_state("downloading" if t.state == "downloading" else
+                           ("done" if t.state == "done" else "paused"))
 
-        bg, fg, border = STATE_STYLE[t.state]
-        self.chip.setText(STATE_TEXT[t.state])
+        bg, fg, border = STATE_STYLE.get(t.state, STATE_STYLE["paused"])
+        self.chip.setText(STATE_TEXT.get(t.state, t.state))
         self.chip.setStyleSheet(
             f"QLabel {{ color: {fg}; background: {bg}; border: 1px solid {border};"
             f" border-radius: 9px; padding: 0 7px; font-size: 10px; }}")
 
-        if t.state == "downloading":
-            self.meta.setText(f"{t.speed:.1f} MB/s · {t.done_mb:.1f} / "
-                              f"{t.size_mb:.1f} MB · {t.percent}%")
-            self.meta.setStyleSheet(f"color: {THEME['text_dim']}; font-size: 11px;")
-        elif t.state == "paused":
-            self.meta.setText(f"已暂停 · {t.done_mb:.1f} / {t.size_mb:.1f} MB")
-            self.meta.setStyleSheet(f"color: {THEME['text_dim']}; font-size: 11px;")
-        elif t.state == "done":
-            self.meta.setText(f"已完成 · {t.size_mb:.1f} MB · 已加入本地曲库")
-            self.meta.setStyleSheet(f"color: {THEME['text_dim']}; font-size: 11px;")
-        else:
-            self.meta.setText(f"下载失败 · {t.error}")
-            self.meta.setStyleSheet(f"color: {THEME['danger']}; font-size: 11px;")
+        self.meta.setText(self._meta_text(t))
+        color = THEME["danger"] if t.state == "failed" else THEME["text_dim"]
+        self.meta.setStyleSheet(f"color: {color}; font-size: 11px;")
 
         self.btn_primary.setVisible(t.state != "done")
         if t.state == "downloading":
             self.btn_primary.set_icon_name("fa5s.pause")
             self.btn_primary.setToolTip("暂停")
-        elif t.state == "paused":
+        elif t.state in ("queued", "paused"):
             self.btn_primary.set_icon_name("fa5s.play")
-            self.btn_primary.setToolTip("继续下载")
+            self.btn_primary.setToolTip("继续下载" if t.state == "paused" else "开始下载")
         elif t.state == "failed":
             self.btn_primary.set_icon_name("fa5s.redo")
             self.btn_primary.setToolTip("重试")
         self.btn_folder.setVisible(t.state == "done")
 
+    @staticmethod
+    def _meta_text(t: DownloadTask) -> str:
+        if t.state == "failed":
+            return f"下载失败 · {t.error or '未知原因'}"
+        if t.state == "done":
+            return f"已完成 · {format_size(t.bytes_total)} · 已加入本地曲库"
+        if t.state == "queued":
+            return "排队中 · 等待前面的任务"
+
+        done = format_size(t.bytes_done)
+        if t.bytes_total <= 0:
+            return f"{t.speed:.1f} MB/s · 已下载 {done}" if t.speed else f"已下载 {done}"
+        total = format_size(t.bytes_total)
+        if t.state == "paused":
+            return f"已暂停 · {done} / {total}"
+        return f"{t.speed:.1f} MB/s · {done} / {total} · {t.percent}%"
+
 
 class DownloadPage(BasePage):
     FILTERS = ("全部", "下载中", "已完成", "失败")
 
-    def __init__(self, player: Player, parent: QWidget | None = None):
+    #: 某个任务下载完成（主窗口据此决定要不要提示）
+    finished = pyqtSignal(object)
+
+    def __init__(
+        self,
+        service: DownloadService,
+        settings: SettingsStore,
+        parent: QWidget | None = None,
+    ):
         super().__init__(parent=parent)
-        self.player = player
-        self._tasks: list[DownloadTask] = list(DOWNLOADS)
+        self.service = service
+        self.settings = settings
+        self._tasks: list[DownloadTask] = service.tasks()
         self._filter = 0
         self._rows: list[DownloadRow] = []
+        self._notice_shown = False
+        self._notice_pending = False
 
         # ---------- 页头 ----------
         head = QWidget()
@@ -164,6 +188,11 @@ class DownloadPage(BasePage):
         hv.addWidget(title)
         hv.addWidget(self.sub)
         self.body.addWidget(head)
+
+        # ---------- 首次声明 ----------
+        self.notice = InlineBanner()
+        self.notice.dismissed.connect(self._on_notice_dismissed)
+        self.body.addWidget(self.notice)
 
         # ---------- 工具条 ----------
         bar = QWidget()
@@ -193,7 +222,8 @@ class DownloadPage(BasePage):
         ico.setPixmap(pixmap("fa5s.folder", THEME["text_dim"], 11))
         ico.setFixedSize(12, 12)
         ph.addWidget(ico)
-        ph.addWidget(QLabel(DOWNLOAD_DIR))
+        self.lbl_path = QLabel(str(settings.download_dir))
+        ph.addWidget(self.lbl_path)
         path_chip.setFixedHeight(30)
         bh.addWidget(path_chip)
 
@@ -218,20 +248,36 @@ class DownloadPage(BasePage):
         self.body.addWidget(self.panel)
         self.body.addStretch(1)
 
-        # ---------- 演示用进度推进 ----------
-        self._ticker = QTimer(self)
-        self._ticker.setInterval(500)
-        self._ticker.timeout.connect(self._tick)
-        self._ticker.start()
+        # ---------- 服务事件 ----------
+        service.taskAdded.connect(self._on_task_added)
+        service.taskChanged.connect(self._on_task_changed)
+        service.taskRemoved.connect(self._on_task_removed)
+        service.taskFinished.connect(self._on_task_finished)
+        service.errorRaised.connect(self._on_service_error)
 
         self.set_filter(0)
+
+    # ---------------- 对外 ----------------
+    def enqueue_tracks(self, tracks: list[Track]) -> int:
+        """把曲目加进下载队列，返回真正新增的数量。"""
+        if not tracks:
+            return 0
+        added = self.service.enqueue_many(
+            tracks, quality=self.settings.download_quality.value)
+        if added:
+            self._tasks = self.service.tasks()
+            self._rebuild()
+        return added
+
+    def set_download_dir(self, path: str) -> None:
+        self.lbl_path.setText(path)
 
     # ---------------- 过滤 / 重建 ----------------
     def _filtered(self) -> list[DownloadTask]:
         if self._filter == 0:
             return list(self._tasks)
         if self._filter == 1:
-            return [t for t in self._tasks if t.state in ("downloading", "paused")]
+            return [t for t in self._tasks if t.state in ("queued", "downloading", "paused")]
         if self._filter == 2:
             return [t for t in self._tasks if t.state == "done"]
         return [t for t in self._tasks if t.state == "failed"]
@@ -247,12 +293,16 @@ class DownloadPage(BasePage):
             item = self._list.takeAt(0)
             w = item.widget()
             if w is not None:
+                # 先摘父级再 deleteLater：否则旧行（尤其是空态提示）会在
+                # DeferredDelete 被处理前继续画在列表上
+                w.hide()
+                w.setParent(None)
                 w.deleteLater()
         self._rows.clear()
 
         tasks = self._filtered()
         if not tasks:
-            empty = QLabel("这个分类下还没有任务")
+            empty = QLabel("还没有下载任务" if not self._tasks else "这个分类下还没有任务")
             empty.setObjectName("BodyText")
             empty.setAlignment(Qt.AlignmentFlag.AlignCenter)
             empty.setFixedHeight(140)
@@ -267,79 +317,94 @@ class DownloadPage(BasePage):
         self._update_summary()
 
     def _update_summary(self) -> None:
-        running = sum(1 for t in self._tasks if t.state == "downloading")
+        running = sum(1 for t in self._tasks if t.state in ("downloading", "queued"))
         paused = sum(1 for t in self._tasks if t.state == "paused")
         done = sum(1 for t in self._tasks if t.state == "done")
         failed = sum(1 for t in self._tasks if t.state == "failed")
-        total = sum(t.size_mb for t in self._tasks)
-        used = sum(t.size_mb * t.progress for t in self._tasks)
-        bits = [f"{running} 个任务下载中"]
-        if paused:
-            bits.append(f"{paused} 个已暂停")
-        bits.append(f"已完成 {done} 首")
-        if failed:
-            bits.append(f"{failed} 个失败")
-        bits.append(f"占用 {used:.1f} / {total:.1f} MB")
-        self.sub.setText(" · ".join(bits))
+        used = sum(t.bytes_done for t in self._tasks)
+        total = sum(t.bytes_total for t in self._tasks)
+
+        if not self._tasks:
+            self.sub.setText("还没有下载任务。在歌单页点「下载」，或从搜索结果里选一首。")
+        else:
+            bits = [f"{running} 个任务进行中"]
+            if paused:
+                bits.append(f"{paused} 个已暂停")
+            bits.append(f"已完成 {done} 首")
+            if failed:
+                bits.append(f"{failed} 个失败")
+            bits.append(f"占用 {format_size(used)} / {format_size(total)}")
+            self.sub.setText(" · ".join(bits))
         self.btn_all.setText("全部暂停" if running else "全部开始")
 
     # ---------------- 操作 ----------------
-    def _row_for(self, task: DownloadTask) -> DownloadRow | None:
-        return next((r for r in self._rows if r.task is task), None)
+    def _row_for(self, task_id: int) -> DownloadRow | None:
+        return next((r for r in self._rows if r.task.id == task_id), None)
 
     def _on_action(self, action: str, task: DownloadTask) -> None:
         if action == "toggle":
-            task.state = "paused" if task.state == "downloading" else "downloading"
-            self._refresh_task(task)
+            if task.state in ("queued", "downloading"):
+                self.service.pause(task.id)
+            else:
+                self.service.resume(task.id)
         elif action == "retry":
-            task.state, task.progress = "downloading", 0.02
-            task.error, task.speed = "", 2.0
-            self._refresh_task(task)
+            self.service.retry(task.id)
         elif action == "delete":
-            if task in self._tasks:
-                self._tasks.remove(task)
-            self._rebuild()
+            self.service.delete(task.id)
         elif action == "folder":
-            QToolTip.showText(QCursor.pos(), f"已在资源管理器中打开 {DOWNLOAD_DIR}")
+            self._open_folder(task)
 
-    def _refresh_task(self, task: DownloadTask) -> None:
-        """状态变化后：仍在当前筛选里就只刷新那一行，否则重建列表。"""
-        row = self._row_for(task)
-        if row is not None and task in self._filtered():
-            row.refresh()
-            self._update_summary()
-        else:
-            self._rebuild()
+    def _open_folder(self, task: DownloadTask) -> None:
+        path = Path(task.file_path)
+        target = path if path.exists() else path.parent
+        QDesktopServices.openUrl(QUrl.fromLocalFile(str(target)))
 
     def _toggle_all(self) -> None:
-        if any(t.state == "downloading" for t in self._tasks):
-            for t in self._tasks:
-                if t.state == "downloading":
-                    t.state = "paused"
+        if any(t.state in ("queued", "downloading") for t in self._tasks):
+            self.service.pause_all()
         else:
-            for t in self._tasks:
-                if t.state == "paused":
-                    t.state = "downloading"
-                    t.speed = random.uniform(1.6, 3.2)
+            self.service.resume_all()
+
+    # ---------------- 服务事件 ----------------
+    def _on_task_added(self, task: DownloadTask) -> None:
+        self._tasks = self.service.tasks()
         self._rebuild()
 
-    # ---------------- 进度推进 ----------------
-    def _tick(self) -> None:
-        if not self.isVisible():      # 页面不在前台就不推进，省 CPU
+    def _on_task_changed(self, event: DownloadEvent) -> None:
+        task = next((t for t in self._tasks if t.id == event.task_id), None)
+        if task is None:
             return
-        finished = False
-        for t in self._tasks:
-            if t.state != "downloading":
-                continue
-            step = t.speed * 0.5 * 0.16 / max(0.1, t.size_mb)
-            t.progress = min(1.0, t.progress + step)
-            t.speed = max(0.4, t.speed + random.uniform(-0.15, 0.15))
-            if t.progress >= 1.0:
-                t.progress, t.state, t.speed = 1.0, "done", 0.0
-                finished = True
-        if finished:
-            self._rebuild()
-        else:
-            for row in self._rows:
+        if task in self._filtered():
+            row = self._row_for(task.id)
+            if row is not None:
                 row.refresh()
-            self._update_summary()
+                self._update_summary()
+            else:
+                self._rebuild()
+        else:
+            self._rebuild()      # 状态变了，已经不属于当前筛选
+
+    def _on_task_removed(self, task_id: int) -> None:
+        self._tasks = self.service.tasks()
+        self._rebuild()
+
+    def _on_task_finished(self, task: DownloadTask) -> None:
+        self.finished.emit(task)
+
+    def _on_service_error(self, message: str) -> None:
+        self.notice.show_message(message, level="error", timeout_ms=6000)
+
+    # ---------------- 首次声明 ----------------
+    def showEvent(self, event) -> None:
+        super().showEvent(event)
+        if self._notice_shown or self.settings.first_run_notice_seen:
+            return
+        self._notice_shown = True
+        self._notice_pending = True
+        self.notice.show_message(NOTICE_TEXT, level="warning", action_text="我已知晓")
+        write_notice_file(Path(self.settings.download_dir))
+
+    def _on_notice_dismissed(self) -> None:
+        if self._notice_pending:
+            self._notice_pending = False
+            self.settings.set("first_run_notice_seen", True)

@@ -22,7 +22,7 @@ from .base import BasePage
 
 
 class PlaylistPage(BasePage):
-    downloadRequested = pyqtSignal()
+    downloadRequested = pyqtSignal(object)      # list[Track]
 
     def __init__(self, player: Player, parent: QWidget | None = None):
         super().__init__(parent=parent)
@@ -86,7 +86,8 @@ class PlaylistPage(BasePage):
         self.btn_dl.setObjectName("GhostPill")
         self.btn_dl.setIcon(icon("fa5s.download", THEME["text_main"]))
         self.btn_dl.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.btn_dl.clicked.connect(self.downloadRequested)
+        self.btn_dl.clicked.connect(
+            lambda: self.downloadRequested.emit(list(self._tracks)))
 
         btns.addWidget(self.btn_play)
         btns.addWidget(self.btn_fav)

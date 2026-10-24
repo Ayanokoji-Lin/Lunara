@@ -36,7 +36,7 @@
 | 播放栏 | 播放/进度/音量 | 虚拟时钟 | `player_url` 服务 + QMediaPlayer | ✅ 直链已就绪 |
 | 侧栏 | 我喜欢的音乐 | 真实歌单（456 首） | 走 `specialType=5` 歌单，不用 `/api/song/like` | ✅ 已实测 |
 | 侧栏 | 我的歌单 | 真实分组（创建 / 收藏） | `/api/user/playlist` | ✅ 已实测 |
-| 下载页 | 任务/进度/暂停 | `QTimer` 模拟 | 直链 + HTTP 流式下载 | ✅ 直链已就绪 |
+| 下载页 | 任务/进度/暂停 | 真实下载（SQLite 任务表） | `player_url` + HTTP 流式 + Range | ✅ 已实测 |
 | 设置 | 音质偏好 | 4 档下拉（只是 UI） | 映射 `QualityLevel` | ⬜ 未接（4 档正好对上，改动很小） |
 
 实测命令：`tools/probe_ui_api.py`（匿名）与 `tools/probe_account_api.py`（登录态）。
@@ -55,7 +55,7 @@
 | P4 歌词 | ✅ 完成（音频待单独一轮） | 热歌榜首曲 101 行真实歌词，时间轴与虚拟时钟对齐 |
 | P5a 登录 | ✅ 完成 | 内嵌浏览器登录 → 抓 Cookie → DPAPI 加密落盘 |
 | P5b 我的音乐 | ✅ 完成 | 侧栏 6 个真实歌单；「我喜欢的音乐」456 首 |
-| P6 下载 | ⬜ | 真实文件落盘 + 断点续传 |
+| P6 下载 | ✅ 完成 | 真实文件落盘、暂停续传、重启恢复、并发上限 |
 | P7 收尾 | ⬜ | 统一错误提示 + 音质偏好接线 + 缓存预热 |
 
 ### P0 · 适配层与模块（无 UI 改动）✅
@@ -187,18 +187,28 @@ DeferredDelete 前仍留在视口里——换歌词瞬间会看到「两列歌�
 
 **验收**：截图 `shots/18_sidebar_mine.png`、`19_liked_playlist.png`。
 
-### P6 · 下载（1 轮）
+### P6 · 下载 ✅
 
-**做什么**：`services/download.py`
-- `httpx` 流式下载 + `Range` 断点续传 + 并发上限（设置页「同时下载数量」）；
-- 任务表落 SQLite（`%APPDATA%/Lunara/tasks.db`），重启恢复；
-- 官方拿不到完整直链时允许降级 GD（已确认「统统允许下载」）；
-- 首次进入下载页弹一次说明：**仅供个人学术研究，严禁任何形式的商业使用与传播**，
-  并写入 `README` 与下载目录的 `NOTICE.txt`。
+**落地**
+- `services/download/naming.py`：文件名清洗（非法字符 / 保留名 / 长度 / 重名）、
+  扩展名推断（URL → Content-Type → 档位）、`Content-Range` 解析；
+- `services/download/store.py`：SQLite 任务表（WAL、`song_id` 唯一、损坏自愈），
+  启动时把 `downloading` 改回 `queued` 实现崩溃恢复；
+- `services/download/service.py`：调度器限流（可实时改并发）、流式 Range 续传、
+  暂停/恢复/删除、4Hz 进度信号、速度 EWMA；
+- `services/settings_store.py` + `services/paths.py`：设置落盘（原子写、损坏回默认），
+  下载目录 / 并发 / 完成提示 / 音质 / 首次声明已读；
+- `widgets/notice.py`：`InlineBanner`（错误、完成提示、首次声明共用）；
+- 页面：`DownloadPage` 去掉 `QTimer`，改为订阅服务事件；`queued` 状态、空态、
+  真实封面、打开文件夹；歌单页「下载」改为带上曲目；设置页三控件与音质下拉接线。
 
-**UI 改动**：`DownloadPage` 的 `QTimer` 模拟换成订阅下载服务的信号，行组件与筛选逻辑不动。
+**关键取舍**
+- **`trial=True` 一律失败**：宁可报错，也不把 45 秒试听存成整首。
+- **`bytes_done` 以 `.part` 实际大小为准**，不用内存计数器（取消/强杀时不漂移）。
+- **不用固定 `Semaphore`**：设置页要能实时改并发，改用「调度器 + 整数上限」。
 
-**验收**：真实文件落到 `D:\Music\Lunara`；暂停/续传/删除/重启恢复全部可用。
+**验收**：两首真实歌曲下载完成（36.1 MB / 37.6 MB FLAC，文件头校验通过），
+截图 `shots/20_download_live.png`；暂停/续传/416/403/5xx/并发上限等 10 个场景有单测覆盖。
 
 ### P7 · 收尾（1 轮）
 
@@ -256,7 +266,12 @@ P5b 改动 widgets/sidebar.py（+set_my_playlists）  main_window.py（登录后
      新增 api/models/user.py（UserPlaylist）+ modules/user.get_user_playlists     ✅
      改动 services/catalog.py（split_user_playlists）  api/models/playlist.py（容忍 null）✅
      测试 tests/test_catalog.py 补 3 项  tools/verify_account_ui.py                 ✅
-P6 新增  services/download.py  改动 pages/download.py（模拟 → 真实）
+P6 新增 services/paths.py  services/settings_store.py  services/error_text.py       ✅
+   新增 services/download/{naming,store,service,notice}.py                         ✅
+   新增 widgets/notice.py（InlineBanner）  NOTICE.txt                              ✅
+   改动 data.py（DownloadTask 扩字段、删演示任务）  pages/download.py（订阅服务）   ✅
+   改动 pages/settings.py（下载三控件 + 音质下拉）  pages/playlist.py（下载带曲目） ✅
+   测试 tests/test_download_{naming,store,service}.py + test_settings_store.py      ✅
 P7 改动  pages/settings.py（音质下拉接 QualityLevel）  main_window.py（错误提示条）
 ```
 
@@ -290,7 +305,7 @@ P7 改动  pages/settings.py（音质下拉接 QualityLevel）  main_window.py�
 
 ## 7. 建议的执行顺序
 
-P6（下载）→ 音频替换（单独一轮）→ 收尾。
-P5 已完成，「会员态 + 直链 + 队列」都已是真数据，现在换播放内核的风险最低。
+音频替换（下一轮）→ 收尾。
+P5、P6 都已完成，「会员态 + 直链 + 队列 + 下载」全是真数据，现在换播放内核的风险最低。
 
-如果只有一轮时间：做 P6 的「流式下载 + 断点续传」，下载页是最后一块演示态。
+如果只有一轮时间：做音频内核替换，那是最后一块演示态。

@@ -41,6 +41,10 @@ from .pages.settings import SettingsPage
 from .services.account import AccountStore, apply_cookies, forget_cookies
 from .services.async_bridge import run_sync, shutdown as shutdown_bridge
 from .services.covers import covers
+from .services.download.service import DownloadService
+from .services.download.store import DownloadStore
+from .services.player_url.service import PlayerUrlService
+from .services.settings_store import SettingsStore
 from .services.catalog import (
     SearchPayload,
     split_user_playlists,
@@ -55,6 +59,7 @@ from .services.catalog import (
 from .services.lyrics import parse_lyric_response
 from .services.qt_bridge import QtAsyncBridge
 from .services.session import SessionService, SessionState
+from .widgets.notice import InlineBanner
 from .widgets.player_bar import PlayerBar
 from .widgets.sidebar import Sidebar
 from .widgets.topbar import TopBar
@@ -121,6 +126,8 @@ class MainWindow(QWidget):
         cl = QVBoxLayout(content)
         cl.setContentsMargins(0, 0, 0, 0)
         cl.setSpacing(0)
+        self.banner = InlineBanner()
+        cl.addWidget(self.banner)
         self.stack = QStackedWidget()
         cl.addWidget(self.stack)
 
@@ -133,14 +140,26 @@ class MainWindow(QWidget):
         self.player_bar = PlayerBar(self.player)
         rl.addWidget(self.player_bar)
 
+        # ---------------- 服务（页面要用，先于页面创建） ----------------
+        self._settings = SettingsStore()
+        self._session = SessionService(get_client())
+        self._url_service = PlayerUrlService(get_client(), self._session)
+        self._download_store = DownloadStore()
+        self._downloads = DownloadService(
+            self._url_service,
+            self._download_store,
+            download_dir=lambda: self._settings.download_dir,
+            concurrency=self._settings.max_concurrent_downloads,
+        )
+
         # ---------------- 页面注册 ----------------
         self.home = HomePage(self.player)
         self.playlist_page = PlaylistPage(self.player)
         self.search_page = SearchPage(self.player)
-        self.settings_page = SettingsPage()
+        self.settings_page = SettingsPage(self._settings)
         self.now_playing = NowPlayingPage(self.player)
         self.empty_page = EmptyPage("星轨播客", "", "fa5s.podcast")
-        self.download_page = DownloadPage(self.player)
+        self.download_page = DownloadPage(self._downloads, self._settings)
         for page in (self.home, self.playlist_page, self.search_page,
                      self.settings_page, self.now_playing, self.empty_page,
                      self.download_page):
@@ -161,7 +180,9 @@ class MainWindow(QWidget):
         self.topbar.backClicked.connect(self.go_back)
         self.topbar.forwardClicked.connect(self.go_forward)
         self.player_bar.openNowPlaying.connect(self.open_now_playing)
-        self.playlist_page.downloadRequested.connect(lambda: self.navigate("local"))
+        self.playlist_page.downloadRequested.connect(self._enqueue_downloads)
+        self.download_page.finished.connect(self._on_download_finished)
+        self._settings.changed.connect(self._on_setting_changed)
         self.now_playing.backRequested.connect(self.go_back)
 
         # 窗口缩放（无边框窗口需要自己挂 QSizeGrip）
@@ -188,6 +209,7 @@ class MainWindow(QWidget):
         self._liked_id: int | None = None
         self._restore_login()
 
+        QTimer.singleShot(0, self._downloads.start)
         QTimer.singleShot(0, self._load_home)
         QTimer.singleShot(0, self._refresh_account)
 
@@ -304,6 +326,31 @@ class MainWindow(QWidget):
     def _on_lyric_error(self, error: BaseException) -> None:
         api_log.get_logger().warning("歌词未加载，沿用演示歌词：%s", error)
 
+    # ================= 下载 =================
+    def _enqueue_downloads(self, tracks: list[Track]) -> None:
+        if not tracks:
+            return
+        added = self.download_page.enqueue_tracks(list(tracks))
+        self.navigate("local")
+        if added:
+            self.banner.show_message(f"已加入 {added} 首下载任务", level="info",
+                                     timeout_ms=4000)
+        else:
+            self.banner.show_message("这些歌曲已经在下载列表里了", level="info",
+                                     timeout_ms=4000)
+
+    def _on_download_finished(self, task) -> None:
+        if not self._settings.notify_on_complete:
+            return
+        self.banner.show_message(f"《{task.track.title}》下载完成", level="info",
+                                 timeout_ms=4000)
+
+    def _on_setting_changed(self, key: str, value: object) -> None:
+        if key == "max_concurrent_downloads":
+            self._downloads.set_concurrency(int(value))
+        elif key == "download_dir":
+            self.download_page.set_download_dir(str(value))
+
     # ================= 账号 =================
     def _restore_login(self) -> None:
         """启动时从加密文件恢复登录态（文件损坏就当未登录，不打扰用户）。"""
@@ -393,6 +440,10 @@ class MainWindow(QWidget):
         await covers().aclose()
 
     def closeEvent(self, event) -> None:
+        try:
+            self._downloads.shutdown()
+        except Exception:  # noqa: BLE001 - 退出路径不该再抛错
+            pass
         try:
             run_sync(self._shutdown_services(), timeout=2.0)
         except Exception:  # noqa: BLE001 - 退出路径不该再抛错

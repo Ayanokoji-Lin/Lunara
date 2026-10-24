@@ -4,6 +4,7 @@ from __future__ import annotations
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtWidgets import (
     QComboBox,
+    QFileDialog,
     QFrame,
     QHBoxLayout,
     QLabel,
@@ -13,6 +14,12 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
+from ..services.settings_store import (
+    QUALITY_OPTIONS,
+    SettingsStore,
+    quality_at,
+    quality_index,
+)
 from ..theme import THEME
 from ..widgets.common import Divider, font
 from ..widgets.sidebar import LogoMark
@@ -26,8 +33,10 @@ class SettingsPage(BasePage):
     loginRequested = pyqtSignal()
     logoutRequested = pyqtSignal()
 
-    def __init__(self, parent: QWidget | None = None):
+    def __init__(self, settings: SettingsStore | None = None,
+                 parent: QWidget | None = None):
         super().__init__(parent=parent)
+        self.settings = settings or SettingsStore()
         self.add_page_header("设置", "让 Lunara 更贴合你的耳朵")
 
         row = QWidget()
@@ -120,35 +129,71 @@ class SettingsPage(BasePage):
         ])
 
     def _build_quality(self) -> QWidget:
+        labels = [label for label, _ in QUALITY_OPTIONS]
+
+        self.cb_play_quality = self._combo(
+            labels, quality_index(self.settings.play_quality))
+        self.cb_play_quality.currentIndexChanged.connect(
+            lambda i: self.settings.set("play_quality", quality_at(i).value))
+
+        self.cb_download_quality = self._combo(
+            labels, quality_index(self.settings.download_quality))
+        self.cb_download_quality.currentIndexChanged.connect(
+            lambda i: self.settings.set("download_quality", quality_at(i).value))
+
         return self._panel([
-            ("在线播放音质", "网络良好时建议选择「极高」", self._combo(
-                ["标准 128k", "较高 192k", "极高 320k", "无损 FLAC"], 2)),
-            ("下载音质", "下载到本地时使用的音质", self._combo(
-                ["标准 128k", "较高 192k", "极高 320k", "无损 FLAC"], 3)),
+            ("在线播放音质", "网络良好时建议选择「极高」", self.cb_play_quality),
+            ("下载音质", "下载到本地时使用的音质", self.cb_download_quality),
             ("移动网络自动降级", "检测到流量网络时自动切换到标准音质", Switch(True)),
         ])
 
     def _build_download(self) -> QWidget:
-        path = QLabel(r"D:\Music\Lunara")
-        path.setStyleSheet(f"color: {THEME['text_sub']}; font-size: 11px;"
-                           f" background: {THEME['bg_input']}; border-radius: 6px;"
-                           f" padding: 5px 10px;")
-        change = QPushButton("更改")
-        change.setObjectName("GhostPill")
-        change.setFixedHeight(30)
-        change.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.lbl_download_dir = QLabel(str(self.settings.download_dir))
+        self.lbl_download_dir.setStyleSheet(
+            f"color: {THEME['text_sub']}; font-size: 11px;"
+            f" background: {THEME['bg_input']}; border-radius: 6px;"
+            f" padding: 5px 10px;")
+
+        self.btn_change_dir = QPushButton("更改")
+        self.btn_change_dir.setObjectName("GhostPill")
+        self.btn_change_dir.setFixedHeight(30)
+        self.btn_change_dir.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_change_dir.clicked.connect(self._choose_download_dir)
+
         box = QWidget()
         bh = QHBoxLayout(box)
         bh.setContentsMargins(0, 0, 0, 0)
         bh.setSpacing(8)
-        bh.addWidget(path)
-        bh.addWidget(change)
+        bh.addWidget(self.lbl_download_dir)
+        bh.addWidget(self.btn_change_dir)
+
+        limits = ["2", "3", "5", "8"]
+        current = self.settings.max_concurrent_downloads
+        index = limits.index(str(current)) if str(current) in limits else 1
+        self.cb_concurrency = self._combo(limits, index)
+        self.cb_concurrency.currentIndexChanged.connect(
+            lambda i: self.settings.set("max_concurrent_downloads", int(limits[i])))
+
+        self.sw_notify = Switch(self.settings.notify_on_complete)
+        self.sw_notify.toggled.connect(
+            lambda on: self.settings.set("notify_on_complete", bool(on)))
 
         return self._panel([
             ("下载目录", "歌曲与封面会保存在该目录下", box),
-            ("同时下载数量", "数量越多越占用带宽", self._combo(["2", "3", "5", "8"], 1)),
-            ("下载完成后提示", "在右下角弹出通知", Switch(True)),
+            ("同时下载数量", "数量越多越占用带宽", self.cb_concurrency),
+            ("下载完成后提示", "在右下角弹出通知", self.sw_notify),
         ])
+
+    def _choose_download_dir(self) -> None:
+        path = QFileDialog.getExistingDirectory(
+            self, "选择下载目录", str(self.settings.download_dir))
+        if not path:
+            return
+        self.settings.set("download_dir", path)
+        self.set_download_dir(path)
+
+    def set_download_dir(self, path: str) -> None:
+        self.lbl_download_dir.setText(path)
 
     def _build_account(self) -> QWidget:
         self.lbl_account = QLabel("未登录 · 只能浏览公开内容")
