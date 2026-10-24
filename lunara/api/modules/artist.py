@@ -6,8 +6,8 @@
 from __future__ import annotations
 
 from ..client import ApiClient
-from ..endpoints import ARTIST_DETAIL_PATH, Endpoint
-from ..models.artist import ArtistDetail
+from ..endpoints import ARTIST_ALBUMS_PATH, ARTIST_DETAIL_PATH, Endpoint
+from ..models.artist import ArtistAlbums, ArtistDetail
 
 
 async def get_artist(
@@ -27,4 +27,21 @@ async def get_artist(
         model=ArtistDetail,
         unwrap="none",
         cache="detail" if use_cache else "none",
+    )
+
+
+async def get_artist_albums(
+    client: ApiClient, artist_id: int, *, limit: int = 30, offset: int = 0,
+    use_cache: bool = True,
+) -> ArtistAlbums:
+    """歌手的专辑列表（实测：``/api/artist/albums/{id}``，``hotAlbums[]``）。"""
+    if artist_id <= 0:
+        raise ValueError("artist_id 必须为正整数")
+
+    return await client.call(
+        Endpoint(ARTIST_ALBUMS_PATH.format(artist_id=artist_id), True, "歌手专辑"),
+        {"limit": limit, "offset": offset},
+        model=ArtistAlbums,
+        unwrap="none",
+        cache="list" if use_cache else "none",
     )

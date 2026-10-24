@@ -284,6 +284,10 @@ class Player(QObject):
         return self._engine == ENGINE_MEDIA and bool(track and track.remote)
 
     def _request_url(self, track: Track) -> None:
+        if track.path:
+            # 本地文件：不走解析，直接喂给媒体后端
+            self.play_file(track, track.path)
+            return
         self._seq += 1
         self._source_track_id = None
         self.urlRequested.emit(self._seq, track)

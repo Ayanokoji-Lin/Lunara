@@ -49,6 +49,7 @@ class SearchPage(BasePage):
     artistActivated = pyqtSignal(int)
     albumActivated = pyqtSignal(int)
     moreRequested = pyqtSignal()      # 单曲列表「加载更多」
+    suggestRequested = pyqtSignal(str)  # 空态里的推荐关键词
 
     def __init__(self, player: Player, parent: QWidget | None = None):
         super().__init__(parent=parent)
@@ -116,8 +117,23 @@ class SearchPage(BasePage):
         self.empty = QLabel("输入关键词，开始搜索")
         self.empty.setObjectName("BodyText")
         self.empty.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.empty.setFixedHeight(160)
+        self.empty.setFixedHeight(120)
         self.body.addWidget(self.empty)
+
+        self._suggest = QWidget()
+        sl = QHBoxLayout(self._suggest)
+        sl.setContentsMargins(0, 0, 0, 0)
+        sl.setSpacing(10)
+        sl.addStretch(1)
+        for word in ("周杰伦", "华语", "纯音乐", "深夜"):
+            b = QPushButton(word)
+            b.setObjectName("GhostPill")
+            b.setFixedHeight(30)
+            b.setCursor(Qt.CursorShape.PointingHandCursor)
+            b.clicked.connect(lambda _=False, w=word: self.suggestRequested.emit(w))
+            sl.addWidget(b)
+        sl.addStretch(1)
+        self.body.addWidget(self._suggest)
 
         self.body.addStretch(1)
         self.player.trackChanged.connect(self.table.set_playing)
@@ -234,16 +250,21 @@ class SearchPage(BasePage):
             3: bool(self._lists),
         }[self._tab]
 
+    def refresh(self) -> None:
+        """外部切到本页时刷新空态（推荐词只在没有关键词时出现）。"""
+        self._refresh()
+
     def _refresh(self) -> None:
         has = self._has_content()
         self._table_panel.setVisible(self._tab == 0 and has)
         self.grid_host.setVisible(self._tab > 0 and has)
         self.empty.setVisible(not has)
 
+        self._suggest.setVisible(not has and not self._query)
         if not has:
             q = self._query
             self.empty.setText(f"没有找到「{q}」相关的星尘，换个词试试？" if q
-                               else "输入关键词，开始搜索")
+                               else "输入关键词，或者点下面的推荐")
             return
         if self._tab > 0:
             self._rebuild_grid()

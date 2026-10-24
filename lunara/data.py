@@ -19,6 +19,7 @@ class Track:
     liked: bool = False
     cover_url: str = ""    # 真实封面；空或加载失败时回落到月牙空态
     remote: bool = False   # True = 线上曲目（播放要先解析直链）；演示曲目走虚拟时钟
+    path: str = ""         # 本地文件绝对路径（本地曲库用），非空则直接播放
 
     @property
     def seed(self) -> int:

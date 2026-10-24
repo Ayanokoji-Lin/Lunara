@@ -100,6 +100,7 @@ class Sidebar(QFrame):
         ("liked", "我喜欢的音乐", "fa5s.star"),
         ("recent", "最近播放", "fa5s.history"),
         ("local", "本地下载", "fa5s.download"),
+        ("library", "本地曲库", "fa5s.folder-open"),
     ]
     GROUPS = [
         ("创建的歌单", ["深夜飞行手册", "月海拾音 · 私藏", "凌晨四点的城市"]),

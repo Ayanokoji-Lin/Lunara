@@ -6,6 +6,7 @@ from PyQt6.QtWidgets import (
     QFrame,
     QHBoxLayout,
     QLabel,
+    QLineEdit,
     QPushButton,
     QVBoxLayout,
     QWidget,
@@ -23,6 +24,7 @@ from .base import BasePage
 
 class PlaylistPage(BasePage):
     downloadRequested = pyqtSignal(object)      # list[Track]
+    actionRequested = pyqtSignal(str)           # 头部额外按钮（"artist_albums" / "album_artist"）
 
     def __init__(self, player: Player, parent: QWidget | None = None):
         super().__init__(parent=parent)
@@ -83,7 +85,15 @@ class PlaylistPage(BasePage):
         self.btn_dl.clicked.connect(
             lambda: self.downloadRequested.emit(list(self._tracks)))
 
+        self.btn_extra = QPushButton()
+        self.btn_extra.setObjectName("GhostPill")
+        self.btn_extra.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_extra.setVisible(False)
+        self.btn_extra.clicked.connect(
+            lambda: self.actionRequested.emit(self._action_kind))
+
         btns.addWidget(self.btn_play)
+        btns.addWidget(self.btn_extra)
         btns.addWidget(self.btn_dl)
         btns.addStretch(1)
         info.addLayout(btns)
@@ -96,6 +106,13 @@ class PlaylistPage(BasePage):
         pl = QVBoxLayout(panel)
         pl.setContentsMargins(14, 12, 14, 14)
         pl.setSpacing(8)
+        self.filter = QLineEdit()
+        self.filter.setObjectName("SearchInput")
+        self.filter.setPlaceholderText("在列表里筛选歌名 / 歌手")
+        self.filter.setClearButtonEnabled(True)
+        self.filter.setFixedHeight(32)
+        self.filter.textChanged.connect(self._apply_filter)
+
         self.lbl_list = SectionHeader("歌曲列表", "共 0 首")
         pl.addWidget(self.lbl_list)
         self.table = TrackTable()
@@ -109,16 +126,39 @@ class PlaylistPage(BasePage):
         self.set_playlist(PLAYLISTS[0])
 
     # ---------------- 数据 ----------------
+    def _apply_filter(self, text: str) -> None:
+        keyword = text.strip().lower()
+        if not keyword:
+            self.table.set_tracks(self._tracks)
+        else:
+            self.table.set_tracks([
+                t for t in self._tracks
+                if keyword in t.title.lower() or keyword in t.artist.lower()
+            ])
+        self.table.set_playing(self.player.current)
+
     def set_playlist(self, playlist: Playlist,
                      tracks: list[Track] | None = None,
                      title: str | None = None,
                      *,
                      subtitle: str | None = None,
                      chip: str | None = None,
-                     round_cover: bool = False) -> None:
+                     round_cover: bool = False,
+                     action: tuple[str, str] | None = None) -> None:
         """一页多用：歌单 / 歌手 / 专辑都走这里，靠 ``chip`` 与 ``subtitle`` 区分。"""
         self._playlist = playlist
         self._tracks = list(tracks if tracks is not None else playlist.tracks)
+        self.filter.blockSignals(True)
+        self.filter.clear()
+        self.filter.blockSignals(False)
+
+        if action is not None:
+            self._action_kind = action[1]
+            self.btn_extra.setText(f"  {action[0]}")
+            self.btn_extra.setVisible(True)
+        else:
+            self._action_kind = ""
+            self.btn_extra.setVisible(False)
         self.cover.set_round(round_cover)
         self.cover.set_cover(playlist.id, playlist.hue, playlist.cover_url)
         self.chip.setText(chip or playlist.tag or "歌单")

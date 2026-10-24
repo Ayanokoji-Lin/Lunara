@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from pydantic import Field
 
+from .album import AlbumInfo
 from .common import ArtistRef, StrictModel
 from .song import Song
 
@@ -36,3 +37,11 @@ class ArtistDetail(StrictModel):
     @property
     def artist_ref(self) -> ArtistRef:
         return ArtistRef(id=self.artist.id, name=self.artist.name)
+
+
+class ArtistAlbums(StrictModel):
+    """``/api/artist/albums/{id}`` 的回包。"""
+
+    artist: ArtistInfo
+    hot_albums: tuple[AlbumInfo, ...] = Field(default_factory=tuple, alias="hotAlbums")
+    more: bool = False

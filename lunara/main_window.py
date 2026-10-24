@@ -22,7 +22,7 @@ from .api.core import logging as api_log
 from .api.modules.album import get_album
 from .api.modules.dj import get_recommend_programs
 from .api.modules.song import like_song
-from .api.modules.artist import get_artist
+from .api.modules.artist import get_artist, get_artist_albums
 from .api.modules.lyric import get_lyric
 from .api.modules.personalized import get_new_songs, get_recommended_playlists
 from .api.modules.playlist import get_playlist_detail
@@ -51,9 +51,11 @@ from .services.error_text import error_text
 from .services.download.store import DownloadStore
 from .services.player_url.service import PlayerUrlService
 from .services.player_url.types import ResolveOutcome
+from .services.local_library import scan
 from .services.recent import RecentStore
 from .services.settings_store import SettingsStore
 from .services.catalog import (
+    hue_for,
     CardItem,
     SearchPayload,
     split_user_playlists,
@@ -209,6 +211,7 @@ class MainWindow(QWidget):
         self.home.hdr_playlists.moreClicked.connect(self._open_more_playlists)
         self.home.hdr_news.moreClicked.connect(self._open_more_songs)
         self.playlist_page.downloadRequested.connect(self._enqueue_downloads)
+        self.playlist_page.actionRequested.connect(self._on_page_action)
         self.download_page.finished.connect(self._on_download_finished)
         self._settings.changed.connect(self._on_setting_changed)
         self.now_playing.set_mode(int(self._settings.get("player_view", 0)))
@@ -233,6 +236,7 @@ class MainWindow(QWidget):
         self.search_page.artistActivated.connect(self.open_artist)
         self.search_page.albumActivated.connect(self.open_album)
         self.search_page.moreRequested.connect(self._load_more)
+        self.search_page.suggestRequested.connect(self._on_search)
         self.search_page.artistActivated.connect(self.open_artist)
         self.search_page.albumActivated.connect(self.open_album)
         self.search_page.moreRequested.connect(self._load_more)
@@ -251,6 +255,8 @@ class MainWindow(QWidget):
         self._podcast_tracks: list[Track] = []
         self._more_tracks: list[Track] = []
         self._recent = RecentStore()
+        self._current_artist_id = 0
+        self._album_artist_id = 0
         self._resume: dict[str, int] = dict(self._settings.get("resume_positions") or {})
         self._resume_dirty = False
         self._resume: dict[str, int] = dict(self._settings.get("resume_positions") or {})
@@ -302,6 +308,8 @@ class MainWindow(QWidget):
             self._open_recent()
         elif key == "local":
             self._show(P_DOWNLOAD)
+        elif key == "library":
+            self._open_library()
         elif key == "podcast":
             self._open_podcast()
         elif key == "roam":
@@ -393,11 +401,13 @@ class MainWindow(QWidget):
 
     def _apply_artist(self, playlist: Playlist) -> None:
         subtitle = f"歌手 · {len(playlist.tracks)} 首热门 · 作品 {playlist.plays} 首"
+        self._current_artist_id = playlist.id
         self.playlist_page.set_playlist(
             playlist, list(playlist.tracks), title=playlist.title,
-            subtitle=subtitle, chip="歌手", round_cover=True)
+            subtitle=subtitle, chip="歌手", round_cover=True,
+            action=("全部专辑", "artist_albums"))
 
-    async def _fetch_album(self, album_id: int) -> tuple[Playlist, str]:
+    async def _fetch_album(self, album_id: int):
         detail = await get_album(get_client(), album_id)
         playlist = to_playlist_from_album(detail)
         parts = [playlist.author]
@@ -405,13 +415,16 @@ class MainWindow(QWidget):
         if year:
             parts.append(f"{year} 年")
         parts.append(f"{len(playlist.tracks)} 首")
-        return playlist, " · ".join(parts)
+        artist = detail.album.artist
+        return playlist, " · ".join(parts), (artist.id if artist else 0), playlist.author
 
-    def _apply_album(self, data: tuple[Playlist, str]) -> None:
-        playlist, subtitle = data
+    def _apply_album(self, data) -> None:
+        playlist, subtitle, artist_id, artist_name = data
+        self._album_artist_id = artist_id
         self.playlist_page.set_playlist(
             playlist, list(playlist.tracks), title=playlist.title,
-            subtitle=subtitle, chip="专辑", round_cover=False)
+            subtitle=subtitle, chip="专辑", round_cover=False,
+            action=(f"歌手：{artist_name}", "album_artist") if artist_id else None)
 
     # ================= 歌词 =================
     def _load_lyric(self, track: Track | None) -> None:
@@ -567,6 +580,8 @@ class MainWindow(QWidget):
                 self.player.play_track(track, self._more_tracks)
         elif self._grid_mode == "playlists":
             self.open_playlist(seed)
+        elif self._grid_mode == "albums":
+            self.open_album(seed)
 
     def _start_roam(self) -> None:
         if not self._recommended:
@@ -598,6 +613,43 @@ class MainWindow(QWidget):
         self._show(P_PLAYLIST)
         if playlist.tracks:
             self.player.set_queue(list(playlist.tracks), 0, autoplay=True)
+
+    def _open_library(self) -> None:
+        root = self._settings.download_dir
+        tracks = scan(root)
+        playlist = Playlist(id=0, title="本地曲库", author=root, plays=0, hue=150, tag="本地")
+        self.playlist_page.set_playlist(
+            playlist, tracks, title="本地曲库",
+            subtitle=f"{len(tracks)} 个文件 · {root}", chip="本地")
+        self._show(P_PLAYLIST)
+        if not tracks:
+            self.banner.show_message("这个目录里没有音频文件，去设置里换个下载目录",
+                                     level="info", timeout_ms=5000)
+
+    def _on_page_action(self, kind: str) -> None:
+        if kind == "artist_albums" and self._current_artist_id:
+            self._open_artist_albums(self._current_artist_id)
+        elif kind == "album_artist" and self._album_artist_id:
+            self.open_artist(self._album_artist_id)
+
+    def _open_artist_albums(self, artist_id: int) -> None:
+        self._show(P_GRID)
+        self.grid_page.configure("专辑", "正在加载…", [])
+        self._bridge.submit(
+            get_artist_albums(get_client(), artist_id, limit=30),
+            on_success=self._apply_artist_albums,
+            on_error=self._on_playlist_error,
+        )
+
+    def _apply_artist_albums(self, data) -> None:
+        cards = []
+        for album in data.hot_albums:
+            hint = f"{album.publish_year} · {album.size} 首" if album.publish_year else f"{album.size} 首"
+            cards.append(CardItem(seed=album.id, hue=hue_for(album.id), title=album.name,
+                                  subtitle=hint, cover_url=album.pic_url))
+        self._grid_mode = "albums"
+        self.grid_page.configure(f"{data.artist.name} 的专辑", f"共 {len(cards)} 张",
+                                 cards, empty_text="这位歌手还没有专辑")
 
     def _open_recent(self) -> None:
         tracks = self._recent.load()
@@ -813,6 +865,7 @@ class MainWindow(QWidget):
         self._search_offsets.clear()
         self.search_page.search(text)
         self._show(P_SEARCH)
+        self.search_page.refresh()
         self._request_search()
 
     def _on_search_live(self, text: str) -> None:

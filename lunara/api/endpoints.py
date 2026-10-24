@@ -105,6 +105,9 @@ DJ_RECOMMEND = Endpoint(
 #: 歌手详情：路径里带 id，调用时用 ``ARTIST_DETAIL_PATH.format(artist_id=...)`` 拼 Endpoint
 ARTIST_DETAIL_PATH = "/api/v1/artist/{artist_id}"
 
+#: 歌手专辑列表：参数 limit / offset
+ARTIST_ALBUMS_PATH = "/api/artist/albums/{artist_id}"
+
 #: 专辑详情：同上
 ALBUM_DETAIL_PATH = "/api/v1/album/{album_id}"
 
