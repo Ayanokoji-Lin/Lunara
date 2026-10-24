@@ -209,6 +209,16 @@ dist/Lunara/Lunara.exe
 产物在 `dist/Lunara/`（约 583 MB，主要是 QtWebEngine 的 Chromium），不入库。
 想更小可以改成 `--onedir` + 手动排除未用的 Qt 模块，或者去掉内嵌登录。
 
+## 打包
+
+```bash
+.venv/Scripts/python.exe tools/build.py      # PyInstaller onedir
+dist/Lunara/Lunara.exe
+```
+
+产物在 `dist/Lunara/`（约 583 MB，主要是 QtWebEngine 的 Chromium），不入库。
+想更小可以改成 `--onedir` + 手动排除未用的 Qt 模块，或者去掉内嵌登录。
+
 ## 版本管理
 
 - 分支只有 `main`，一个阶段一个提交，消息前缀用 `feat / fix / test / docs / chore`。
