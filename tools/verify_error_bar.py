@@ -69,6 +69,16 @@ def main() -> int:
         pump(app, 2.5)
         print(f"一次播放的解析次数：{len(seqs)}（应为 1）")
 
+    # 3) 演示歌单（101 起）不发请求、不出错误条
+    win.banner.clear()
+    win.open_playlist(101)
+    pump(app, 0.8)
+    page = win.playlist_page
+    print(f"演示歌单：{page._playlist.title} | 曲目 {len(page._tracks)} | "
+          f"提示条 {win.banner.isVisible()}")
+    win.grab().save(os.path.join(OUT, "23_demo_playlist.png"))
+    print("saved shots/23_demo_playlist.png")
+
     win.close()
     return 0 if visible else 1
 

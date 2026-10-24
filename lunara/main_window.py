@@ -30,7 +30,7 @@ from .api.modules.search import (
     search_songs,
 )
 from .core.player import Player
-from .data import PLAYLISTS, TRACKS, Playlist, Track
+from .data import PLAYLISTS, TRACKS, Playlist, Track, demo_playlist, is_demo_playlist
 from .pages.base import EmptyPage
 from .pages.download import DownloadPage
 from .pages.home import HomePage
@@ -267,7 +267,18 @@ class MainWindow(QWidget):
             self._show(P_EMPTY)
 
     def open_playlist(self, pid: int) -> None:
-        """打开歌单：先切页（保留上一屏内容），再异步换成真实数据。"""
+        """打开歌单：先切页（保留上一屏内容），再异步换成真实数据。
+
+        演示歌单（101 起）只存在于本地，直接渲染、不发请求——否则会拿一个
+        不存在的 id 去查详情，得到一个解析失败和一条没必要的错误提示。
+        """
+        if is_demo_playlist(pid):
+            demo = demo_playlist(pid)
+            if demo is not None:
+                self.playlist_page.set_playlist(demo, list(demo.tracks), title=demo.title)
+            self._show(P_PLAYLIST)
+            return
+
         self._show(P_PLAYLIST)
         self._bridge.submit(
             self._fetch_playlist(pid),

@@ -278,6 +278,12 @@ seek 到 160222ms 实际落在 160654ms，暂停生效；截图 `shots/21_playin
 
 **验收**：`shots/22_error_bar.png`（错误只出现在顶部细条，页面内容不白）。
 
+**补丁（2026-10-24 下午）**：从首页 Banner 点进去时，如果首页数据还没到，
+`HomePage._playlists` 仍是演示数据，于是拿演示 id（101 起）去查歌单详情，
+得到一个解析失败 + 一条红条。现在 `open_playlist()` 里先判断 `is_demo_playlist()`，
+命中就直接用本地数据渲染，**不发请求也不报错**；真实 id 失败仍然提示。
+截图 `shots/23_demo_playlist.png`。
+
 ---
 
 ## 3. 关键设计决策

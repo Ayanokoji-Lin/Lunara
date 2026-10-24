@@ -171,3 +171,15 @@ for _pl in PLAYLISTS:
 for _i, _pl in enumerate(PLAYLISTS):
     _start = (_i * 3) % len(TRACKS)
     _pl.tracks = (TRACKS[_start:] + TRACKS[:_start])[: 8 + (_i % 5)]
+
+#: 演示歌单 id（101 起）。这些 id 只存在于本地，**不能拿去请求接口**——
+#: 拿 101 去查歌单详情只会得到一个解析失败，界面上还会多一条红条。
+DEMO_PLAYLIST_IDS: frozenset[int] = frozenset(p.id for p in PLAYLISTS)
+
+
+def is_demo_playlist(pid: int) -> bool:
+    return pid in DEMO_PLAYLIST_IDS
+
+
+def demo_playlist(pid: int) -> Playlist | None:
+    return next((p for p in PLAYLISTS if p.id == pid), None)
