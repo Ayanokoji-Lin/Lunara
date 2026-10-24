@@ -18,6 +18,10 @@ from PyQt6.QtWidgets import (
 
 from .api import aclose_client, get_client
 from .api.core import logging as api_log
+from .api.modules.album import get_album
+from .api.modules.artist import get_artist
+from .api.modules.album import get_album
+from .api.modules.artist import get_artist
 from .api.modules.lyric import get_lyric
 from .api.modules.personalized import get_new_songs, get_recommended_playlists
 from .api.modules.playlist import get_playlist_detail
@@ -52,6 +56,10 @@ from .services.settings_store import SettingsStore
 from .services.catalog import (
     SearchPayload,
     split_user_playlists,
+    to_playlist_from_album,
+    to_playlist_from_artist,
+    to_playlist_from_album,
+    to_playlist_from_artist,
     to_album_card,
     to_artist_card,
     to_playlist,
@@ -207,6 +215,10 @@ class MainWindow(QWidget):
         self._search_timer.timeout.connect(self._request_search)
         self.search_page.resultsRequested.connect(self._request_search_for_tab)
         self.search_page.playlistActivated.connect(self.open_playlist)
+        self.search_page.artistActivated.connect(self.open_artist)
+        self.search_page.albumActivated.connect(self.open_album)
+        self.search_page.artistActivated.connect(self.open_artist)
+        self.search_page.albumActivated.connect(self.open_album)
         self.player.trackChanged.connect(self._load_lyric)
         self.settings_page.loginRequested.connect(self._on_login_requested)
         self.settings_page.logoutRequested.connect(self._on_logout_requested)
@@ -286,6 +298,24 @@ class MainWindow(QWidget):
             on_error=self._on_playlist_error,
         )
 
+    def open_artist(self, artist_id: int) -> None:
+        """歌手页：复用歌单页的骨架，头像取圆形、标签写「歌手」。"""
+        self._show(P_PLAYLIST)
+        self._bridge.submit(
+            self._fetch_artist(artist_id),
+            on_success=self._apply_artist,
+            on_error=self._on_playlist_error,
+        )
+
+    def open_album(self, album_id: int) -> None:
+        """专辑页：同样复用歌单页，标签写「专辑」。"""
+        self._show(P_PLAYLIST)
+        self._bridge.submit(
+            self._fetch_album(album_id),
+            on_success=self._apply_album,
+            on_error=self._on_playlist_error,
+        )
+
     # ================= 异步数据 =================
     async def _fetch_home(self) -> tuple[list[Playlist], list[Track]]:
         """首页两屏数据并发拉取；任一失败由调用方兜底成演示数据。"""
@@ -326,7 +356,32 @@ class MainWindow(QWidget):
     def _on_playlist_error(self, error: BaseException) -> None:
         api_log.get_logger().warning("歌单未加载，沿用当前内容：%s", error)
         self._show_error(f"歌单加载失败：{error_text(error)}")
-        self._show_error(f"歌单加载失败：{error_text(error)}")
+
+    async def _fetch_artist(self, artist_id: int) -> Playlist:
+        detail = await get_artist(get_client(), artist_id)
+        return to_playlist_from_artist(detail)
+
+    def _apply_artist(self, playlist: Playlist) -> None:
+        subtitle = f"歌手 · {len(playlist.tracks)} 首热门 · 作品 {playlist.plays} 首"
+        self.playlist_page.set_playlist(
+            playlist, list(playlist.tracks), title=playlist.title,
+            subtitle=subtitle, chip="歌手", round_cover=True)
+
+    async def _fetch_album(self, album_id: int) -> tuple[Playlist, str]:
+        detail = await get_album(get_client(), album_id)
+        playlist = to_playlist_from_album(detail)
+        parts = [playlist.author]
+        year = detail.album.publish_year
+        if year:
+            parts.append(f"{year} 年")
+        parts.append(f"{len(playlist.tracks)} 首")
+        return playlist, " · ".join(parts)
+
+    def _apply_album(self, data: tuple[Playlist, str]) -> None:
+        playlist, subtitle = data
+        self.playlist_page.set_playlist(
+            playlist, list(playlist.tracks), title=playlist.title,
+            subtitle=subtitle, chip="专辑", round_cover=False)
 
     # ================= 歌词 =================
     def _load_lyric(self, track: Track | None) -> None:

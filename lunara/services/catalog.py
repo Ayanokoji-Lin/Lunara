@@ -13,6 +13,8 @@ from dataclasses import dataclass
 
 from ..api.models.personalized import NewSongEntry, RecommendedPlaylist
 from ..api.models.playlist import PlaylistDetail
+from ..api.models.album import AlbumDetail
+from ..api.models.artist import ArtistDetail
 from ..api.models.search import AlbumHit, ArtistHit, PlaylistHit
 from ..api.models.user import UserPlaylist
 from ..api.models.song import Song
@@ -180,3 +182,35 @@ def split_user_playlists(
             created.append(to_playlist_from_user(item))
 
     return created, collected, liked_id
+
+
+def to_playlist_from_artist(detail: ArtistDetail) -> Playlist:
+    """歌手详情 → 复用歌单页的 Playlist（头像当封面，热门 50 首当曲目）。"""
+    artist = detail.artist
+    return Playlist(
+        id=artist.id,
+        title=artist.name,
+        author=artist.subtitle,
+        plays=artist.music_size,
+        hue=hue_for(artist.id),
+        tag="歌手",
+        desc=artist.brief_desc or "",
+        cover_url=artist.pic_url,
+        tracks=[to_track(song) for song in detail.hot_songs],
+    )
+
+
+def to_playlist_from_album(detail: AlbumDetail) -> Playlist:
+    """专辑详情 → 复用歌单页的 Playlist。"""
+    album = detail.album
+    return Playlist(
+        id=album.id,
+        title=album.name,
+        author=album.artist_names,
+        plays=0,
+        hue=hue_for(album.id),
+        tag="专辑",
+        desc=album.description or "",
+        cover_url=album.pic_url,
+        tracks=[to_track(song) for song in detail.songs],
+    )

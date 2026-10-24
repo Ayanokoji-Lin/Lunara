@@ -59,6 +59,7 @@
 | P6.5 音频内核 | ✅ 完成 | 真实出声、真实时长、seek、切歌竞态 |
 | P6.5 音频内核 | ✅ 完成 | 真实出声、真实时长、seek、切歌竞态 |
 | P7 收尾 | ✅ 完成 | 音质接线、错误细条、首页失败重试 |
+| P8 歌手页 / 专辑页 | ✅ 完成 | 搜「周杰伦」点卡片：50 首热门 / 13 首专辑曲目 |
 
 ### P0 · 适配层与模块（无 UI 改动）✅
 
@@ -283,6 +284,36 @@ seek 到 160222ms 实际落在 160654ms，暂停生效；截图 `shots/21_playin
 得到一个解析失败 + 一条红条。现在 `open_playlist()` 里先判断 `is_demo_playlist()`，
 命中就直接用本地数据渲染，**不发请求也不报错**；真实 id 失败仍然提示。
 截图 `shots/23_demo_playlist.png`。
+
+---
+
+### P8 · 歌手页 / 专辑页 ✅
+
+**实测（2026-10-24）**
+- `/api/v1/artist/{id}` → `{artist, hotSongs[50], more}`；`artist.picUrl` 是头像，
+  `musicSize` / `albumSize` 是作品数量，`alias` 是别名（「Jay Chou / 周董」）。
+- `/api/v1/album/{id}` → `{album, songs[]}`；`publishTime` 是毫秒时间戳，
+  `artists` 是合作歌手，`description` 可能是 `null`。
+- `/api/v1/artist/detail` 与 `/api/v1/album/detail/{id}` 都返回 400，**只有上面两条路径可用**。
+
+**做法：不新建页面，复用歌单页**
+`PlaylistPage.set_playlist()` 增加 `subtitle` / `chip` / `round_cover` 三个可选参数：
+- 歌手：`chip="歌手"`、圆形头像、副标题「歌手 · 50 首热门 · 作品 582 首」；
+- 专辑：`chip="专辑"`、方形封面、副标题「周杰伦 / 方文山 · 2002 年 · 13 首」；
+- 歌单：三个参数都不传，行为和以前完全一致。
+
+**接线**
+- 新增 `api/models/{artist,album}.py`、`api/modules/{artist,album}.py`、
+  `catalog.to_playlist_from_{artist,album}()`；
+- `SearchPage` 新增 `artistActivated(int)` / `albumActivated(int)`（原来点卡片只是播第一首）；
+- `MainWindow.open_artist()` / `open_album()`，失败仍走顶部错误条。
+
+**坑**：改 `main_window.py` 时把 `_on_playlist_error` 的一行 `_show_error` 误留在了
+`_apply_album` 里，导致回调抛 `NameError`。PyQt6 对槽函数里的未捕获异常会直接
+`qFatal` 结束进程——**没有 traceback、退出码 127**，看起来像段错误。排查方式：
+先把回调逻辑拆出来在主线程序列化调用一遍，异常就现形了。
+
+**验收**：截图 `shots/24_artist_page.png`（周杰伦 · 50 首）、`25_album_page.png`（Partners 拍档 · 13 首）。
 
 ---
 

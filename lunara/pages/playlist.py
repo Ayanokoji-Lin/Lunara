@@ -118,13 +118,20 @@ class PlaylistPage(BasePage):
     # ---------------- 数据 ----------------
     def set_playlist(self, playlist: Playlist,
                      tracks: list[Track] | None = None,
-                     title: str | None = None) -> None:
+                     title: str | None = None,
+                     *,
+                     subtitle: str | None = None,
+                     chip: str | None = None,
+                     round_cover: bool = False) -> None:
+        """一页多用：歌单 / 歌手 / 专辑都走这里，靠 ``chip`` 与 ``subtitle`` 区分。"""
         self._playlist = playlist
         self._tracks = list(tracks if tracks is not None else playlist.tracks)
+        self.cover.set_round(round_cover)
         self.cover.set_cover(playlist.id, playlist.hue, playlist.cover_url)
-        self.chip.setText(playlist.tag or "歌单")
+        self.chip.setText(chip or playlist.tag or "歌单")
         self.lbl_title.setText(title or playlist.title)
         self.lbl_meta.setText(
+            subtitle or
             f"由 {playlist.author} 创建 · {len(self._tracks)} 首 · "
             f"播放 {playlist.plays_text}")
         self.lbl_desc.setText(playlist.desc)

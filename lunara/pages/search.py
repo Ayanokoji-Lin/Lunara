@@ -46,6 +46,8 @@ class SearchPage(BasePage):
     resultsRequested = pyqtSignal(str, int)
     #: 点歌单卡片 → 打开详情
     playlistActivated = pyqtSignal(int)
+    artistActivated = pyqtSignal(int)
+    albumActivated = pyqtSignal(int)
 
     def __init__(self, player: Player, parent: QWidget | None = None):
         super().__init__(parent=parent)
@@ -227,13 +229,15 @@ class SearchPage(BasePage):
             for item in self._artists:
                 card = CoverCard(item.seed, item.hue, item.title, item.subtitle, "",
                                  round_cover=True, cover_url=item.cover_url)
-                card.clicked.connect(self._play_first)
+                card.clicked.connect(
+                    lambda aid=item.seed: self.artistActivated.emit(aid))
                 cards.append(card)
         elif self._tab == 2:
             for item in self._albums:
                 card = CoverCard(item.seed, item.hue, item.title, item.subtitle, "",
                                  cover_url=item.cover_url)
-                card.clicked.connect(self._play_first)
+                card.clicked.connect(
+                    lambda alb=item.seed: self.albumActivated.emit(alb))
                 cards.append(card)
         else:
             for p in self._lists:
@@ -245,8 +249,3 @@ class SearchPage(BasePage):
         for i, card in enumerate(cards):
             grid.addWidget(card, i // self.COLS, i % self.COLS)
         self.grid_layout.addWidget(wrap)
-
-    def _play_first(self) -> None:
-        """歌手 / 专辑详情页还没做，先播当前结果的第一首，避免点了没反应。"""
-        if self._tracks:
-            self.player.play_track(self._tracks[0], self._tracks)

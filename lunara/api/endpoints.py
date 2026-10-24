@@ -90,12 +90,16 @@ USER_PLAYLIST = Endpoint(
     "参数 uid,limit,offset；返回 playlist[] 与 more（需要登录 Cookie）",
 )
 
+#: 歌手详情：路径里带 id，调用时用 ``ARTIST_DETAIL_PATH.format(artist_id=...)`` 拼 Endpoint
+ARTIST_DETAIL_PATH = "/api/v1/artist/{artist_id}"
+
+#: 专辑详情：同上
+ALBUM_DETAIL_PATH = "/api/v1/album/{album_id}"
+
 # --------------------------------------------------------------------------- #
 # 待验证（阶段③④ 逐条跑真请求确认，未确认前不写实现）
 # --------------------------------------------------------------------------- #
 UNVERIFIED: tuple[tuple[str, str], ...] = (
-    ("/api/v1/album/{id}", "专辑详情：是否 v1 待实测"),
-    ("/api/v1/artist/{id}", "歌手详情：是否 v1 待实测"),
     ("/api/mv/detail", "MV 详情：路径待实测"),
     ("/api/comment/music", "评论：分页游标语义（before/time/limit/offset）待实测"),
     ("/api/register/anonimous", "匿名 Cookie 换取：是否需要 deviceId/加密参数待实测"),

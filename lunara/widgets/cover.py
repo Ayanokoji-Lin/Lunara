@@ -26,6 +26,7 @@ class CoverArt(QWidget):
         super().__init__(parent)
         self._size = size
         self._radius = radius
+        self._base_radius = radius
         self._seed = 1
         self._hue: int | None = None
         self._url = ""
@@ -35,6 +36,15 @@ class CoverArt(QWidget):
 
     def set_cover(self, seed: int, hue: int | None = None, url: str = "") -> None:
         self._seed, self._hue, self._url = seed, hue, url
+        self._pm = None
+        self.update()
+
+    def set_round(self, on: bool = True) -> None:
+        """切换成圆形（歌手头像用）；圆角值等于半边长。"""
+        radius = self._size / 2 if on else self._base_radius
+        if radius == self._radius:
+            return
+        self._radius = radius
         self._pm = None
         self.update()
 
