@@ -1,0 +1,267 @@
+# Lunara · UI 功能落地计划
+
+> 前提：数据层（api / services / store）已完成并通过 85 项单测 + 5 项真机冒烟。
+> 本文件回答一个问题：**怎么把 UI 上每一个按钮接到真实数据上**，且不重画界面。
+> 歌词与封面确定走官方接口，不接 GD Studio 的 `lyric` / `pic`。
+
+---
+
+## 0. 原则（先定规矩，后面才不跑偏）
+
+1. **视觉零改动**：布局、配色、动效、间距都不动。只允许在页面里**增加数据注入口**。
+2. **mock 变兜底**：`lunara/data.py` 保留，断网/未登录时仍能演示，不出现空白页。
+3. **UI 只认三个契约**：`Track` / `Playlist` / `DownloadTask`（都在 `data.py`）。
+   API 模型一律经 `services/catalog.py` 适配，页面里不出现 `Song` / `SongUrlItem`。
+4. **请求一律异步**：页面通过 `QtAsyncBridge.submit()` 拿结果，回调在主线程。
+5. **每阶段可独立验收**：做完一个阶段，界面就该有一块是真的，其余仍是 mock，互不阻塞。
+
+---
+
+## 1. 现状盘点（页面 × 功能 × 接口 × 验证状态）
+
+| 页面 | 功能 | 现在 | 需要的接口 | 状态 |
+|---|---|---|---|---|
+| 首页 | Banner 轮播 | 本地文案 | 保留本地（3 张），点击跳歌单 | 无需接口 |
+| 首页 | 推荐歌单 5×2 | `PLAYLISTS` mock | `/api/personalized/playlist` | ✅ 已实测 |
+| 首页 | 新歌速递 5 张 | `TRACKS[:5]` | `/api/personalized/newsong` | ✅ 已实测 |
+| 歌单详情 | 封面/标题/作者/播放量/描述 | `PLAYLISTS[0]` | `/api/v6/playlist/detail` | ✅ 已实测 |
+| 歌单详情 | 曲目列表 | `playlist.tracks` | 同上（`playlist.tracks`） | ✅ 已实测 |
+| 歌单详情 | 收藏 / 下载 | 无逻辑 / 跳页 | `/api/playlist/subscribe` | ⚠️ 需登录 |
+| 搜索 | 单曲 | 本地过滤 | `cloudsearch` type=1 | ✅ 已实测 |
+| 搜索 | 歌手 | 本地去重 | `cloudsearch` type=100 | ✅ 已实测 |
+| 搜索 | 专辑 | 本地去重 | `cloudsearch` type=10 | ✅ 已实测 |
+| 搜索 | 歌单 | 本地过滤 | `cloudsearch` type=1000 | ✅ 已实测 |
+| 播放页 | 歌词 | `LYRICS` 固定 | `/api/song/lyric` | ✅ 已实测（LRC 文本） |
+| 播放页 | 喜欢 | 内存 set | `/api/like` | ⚠️ 需登录 |
+| 播放栏 | 播放/进度/音量 | 虚拟时钟 | `player_url` 服务 + QMediaPlayer | ✅ 直链已就绪 |
+| 侧栏 | 我喜欢的音乐 | mock 8 首 | `/api/song/like`（`uid`） | ⚠️ 需登录 |
+| 侧栏 | 我的歌单 | 静态 3 组名 | `/api/user/playlist` | ⚠️ 需登录（匿名可查他人） |
+| 下载页 | 任务/进度/暂停 | `QTimer` 模拟 | 直链 + HTTP 流式下载 | ✅ 直链已就绪 |
+| 设置 | 音质偏好 | 4 档下拉 | 映射 `QualityLevel` | ✅ 4 档正好对上 |
+
+实测命令：`tools/probe_ui_api.py`（2026-10-24，匿名 Cookie，全部 code=200）。
+
+---
+
+## 2. 分阶段计划
+
+| 阶段 | 状态 | 验收方式 |
+|---|---|---|
+| P0 适配层 | ✅ 完成 | 109 项单测（含 3 组真实夹具） |
+| P1 首页 | ✅ 完成 | `tools/verify_ui_live.py` 打出 10 张真实歌单 + 5 首新歌 |
+| P2 歌单详情 | ✅ 完成 | 同一脚本打开热歌榜，200 首真实曲目 |
+| P3 搜索四类 | ✅ 完成 | 四个 Tab 全部真实结果（30 单曲 / 20 歌手 / 20 专辑 / 20 歌单） |
+| P3.5 真实封面 | ✅ 完成 | 首页/歌单/搜索/播放页都是真图，拿不到时回落月牙空态 |
+| P4 歌词 | ✅ 完成（音频待单独一轮） | 热歌榜首曲 101 行真实歌词，时间轴与虚拟时钟对齐 |
+| P5 我的音乐 | ⬜ | 扫码登录 → 侧栏真实歌单 |
+| P6 下载 | ⬜ | 真实文件落盘 + 断点续传 |
+| P7 收尾 | ⬜ | `README-api.md` |
+
+### P0 · 适配层与模块（无 UI 改动）✅
+
+**做了什么**
+- `services/catalog.py`：`to_track(Song) -> Track`、`to_playlist(PlaylistDetail) -> Playlist`、
+  `to_playlist_card(RecommendedPlaylist)`、`to_track_from_newsong(NewSongEntry)`。
+  - `Track.hue` 由 `id` 派生（`id * 37 % 360`），保证同一首歌封面稳定，不依赖接口。
+- 新模块：`api/modules/playlist.py`（详情）、`api/modules/lyric.py`、`api/modules/personalized.py`。
+- 新模型：`PlaylistDetail` / `LyricResponse` / `RecommendedPlaylist` / `NewSongEntry`。
+- LRC 解析：`services/lyrics.py`，`[mm:ss.xxx]` → `list[(ms, text)]`，跳过空行、去重、排序。
+- `data.py` 的 `Playlist` 增加 `desc` 字段（真实简介），空值时页面仍用原默认文案。
+
+**验收**：`tests/test_catalog.py`、`tests/test_lyrics.py`、`tests/test_modules_ui.py` 全绿。
+
+### P1 · 首页接真 ✅
+
+**UI 改动（只加方法）**：`HomePage.set_playlists()` / `set_new_songs()`，
+把 `__init__` 里建网格的代码抽成 `_rebuild_playlists()` / `_rebuild_songs()`，卡片逻辑一行未改。
+
+**接线**：`MainWindow` 用 `QTimer.singleShot(0, ...)` 启动后异步拉两个接口
+（`asyncio.gather` 并发），成功后注入；失败只记一条 warning，界面继续用演示数据。
+
+**验收**：`tools/verify_ui_live.py` 输出 10 张真实歌单（含播放量）与 5 首新歌，
+截图 `shots/12_home_live.png` 与改前 `shots/01_home.png` 布局一致。
+
+### P2 · 歌单详情 ✅
+
+**UI 改动**：无（`PlaylistPage.set_playlist(playlist, tracks, title)` 已存在）。
+
+**接线**：`MainWindow.open_playlist(pid)` → 异步 `/api/v6/playlist/detail` → `catalog.to_playlist` → `set_playlist`。
+加载期间沿用现有页面（显示上一次内容），避免闪烁。
+
+**验收**：任意歌单 id 能打开，曲目数与线上一致，「播放全部」可用。
+
+### P3 · 搜索四类 ✅
+
+**UI 改动**：`SearchPage.set_results(payload, keyword)` + `resultsRequested` 信号；
+本地过滤保留为兜底（敲字立刻有反应），真实结果到了再覆盖。
+
+**接线**：
+- 输入 320ms 防抖（`MainWindow._search_timer`）→ 只打**当前 Tab** 那一个 `type`；
+- 切 Tab 时若 `(关键词, Tab)` 没拉过 → 发 `resultsRequested` 补一次（每类最多一次，另有 5 分钟列表缓存）；
+- 关键词已变时丢弃迟到的结果（`set_results` 里比对 keyword），避免慢请求盖掉新结果。
+
+**实测**：搜「周杰伦」→ 单曲 30 / 歌手 20 / 专辑 20 / 歌单 20，四类都有真实数据，
+截图 `shots/14_search_songs.png`、`15_search_artists.png`。
+
+**已知缺口**：歌手页 / 专辑页还没有，卡片点击暂时播当前结果的第一首（占位），
+P5 之后再补两个详情页。
+
+### P3.5 · 真实封面 ✅
+
+**规则（按你的补充）**：**月牙 = 空态**。有真实封面就显示图，没有（还没下载完 / 下载失败 / 接口没给）
+才回落到程序化月牙封面。
+
+**做了什么**
+- `services/covers.py`：异步下载 + 磁盘缓存（`%APPDATA%/Lunara/covers/<sha1>.img`）+ 内存 LRU；
+  同一个 seed 只下载一次；下载线程只回传 bytes，`QPixmap` 解码留在主线程。
+- `CoverArt` / `CoverCard` / `VinylDisc` 都支持 `cover_url`，收到 `ready(seed)` 信号后自动重绘。
+- `Track` / `Playlist` / `CardItem` 增加 `cover_url`，由 `catalog` 从 `album.picUrl` /
+  `coverImgUrl` 填进来。
+- 首页、歌单页、搜索三类卡片、播放页（大封面 + 黑胶中心）全部生效。
+
+**验收**：`shots/12_home_live.png` 十张真实封面；`16_now_playing_live.png` 黑胶中心是真实专辑图。
+
+### P4 · 歌词 ✅（音频留到单独一轮）
+
+> 已定：**先保留虚拟时钟**，等数据全部接完再换 `QMediaPlayer`。所以本轮只接歌词，
+> 播放内核不动，`core/player.py` 一行不改。
+
+**歌词**：`NowPlayingPage.set_lyrics()`；`MainWindow` 监听 `player.trackChanged` →
+异步拉 `/api/song/lyric` → `parse_lyric_response` → 注入；空歌词保持演示歌词，切歌不闪白。
+
+**顺带修的老问题**：`LyricView.set_lyrics` 原来只 `deleteLater()`，旧行在事件循环处理
+DeferredDelete 前仍留在视口里——换歌词瞬间会看到「两列歌词」。改成先 `hide()` +
+`setParent(None)` 再删除。
+
+**播放（后续单独一轮）**：`core/player.py` 换 `QMediaPlayer` + `PlayerUrlService`；
+`trial=True` 时发 `trialModeChanged` 信号（标题旁加「试听」小字）。
+
+**验收**：热歌榜首曲《我不难过》拉到 101 行真实歌词（`[0s] 作词 : 杨明学` …），
+截图 `shots/16_now_playing_live.png`。
+
+### P5 · 我的音乐（需登录，1 轮）
+
+**登录方案（已定，2026-10-24 调整）**：**不碰登录接口，直接开浏览器让用户自己登，然后取 Cookie 加密存本地。**
+
+```
+点「登录」→ 内嵌 QWebEngineView 打开 music.163.com 登录页
+        → 监听 QWebEngineProfile.cookieStore().cookieAdded
+        → 过滤 domain=.music.163.com，收集 MUSIC_U / __csrf / NMTID
+        → 出现 MUSIC_U 即视为成功 → 关闭窗口
+        → AES-256-GCM 加密写 %APPDATA%/Lunara/session.enc
+        → CookieProvider 注入 + SessionService.invalidate()
+```
+
+为什么这样最省事：**完全不用实现 weapi**（扫码/手机号登录都要加密组包），
+也不用处理验证码、设备指纹；登录这件事交给浏览器本身。
+
+细节：
+- 依赖 `PyQt6-WebEngine`（约 150MB）。装不上时退化为「粘贴 Cookie」对话框（一个输入框，够用）。
+- 主密钥优先用 Windows DPAPI（`CryptProtectData`，按当前用户加密，不落明文密钥）；
+  失败则回退 `LUNARA_SECRET_KEY` 环境变量。
+- 只存必要的几个键，别把整份 Cookie 搬进来；退出登录 = 删文件 + 清 `CookieProvider`。
+
+**接线**：侧栏「我喜欢的音乐」/「我的歌单」→ `/api/song/like`、`/api/user/playlist`；
+`Sidebar.set_playlists(list[Playlist])` 替换静态组名；喜欢按钮 → `/api/like`。
+
+**验收**：浏览器里登录完，主界面头像/昵称刷新；侧栏显示真实歌单；点喜欢能落库；
+重启后仍是登录态（从加密文件恢复）。
+
+### P6 · 下载（1 轮）
+
+**做什么**：`services/download.py`
+- `httpx` 流式下载 + `Range` 断点续传 + 并发上限（设置页「同时下载数量」）；
+- 任务表落 SQLite（`%APPDATA%/Lunara/tasks.db`），重启恢复；
+- 官方拿不到完整直链时允许降级 GD（已确认「统统允许下载」）；
+- 首次进入下载页弹一次说明：**仅供个人学术研究，严禁任何形式的商业使用与传播**，
+  并写入 `README` 与下载目录的 `NOTICE.txt`。
+
+**UI 改动**：`DownloadPage` 的 `QTimer` 模拟换成订阅下载服务的信号，行组件与筛选逻辑不动。
+
+**验收**：真实文件落到 `D:\Music\Lunara`；暂停/续传/删除/重启恢复全部可用。
+
+### P7 · 收尾（1 轮）
+
+- `docs/README-api.md`：架构、错误码、音质映射、环境变量、新增 Provider 指引。
+- 统一错误呈现：`ApiError` → 页面顶部细条提示（复用现有 `BodyText` 样式），不弹窗。
+- 缓存预热：启动时并发拉首页两个接口，进页面即命中。
+
+---
+
+## 3. 关键设计决策
+
+| 议题 | 决定 | 理由 |
+|---|---|---|
+| 封面图 | 先用程序化封面，`hue` 由歌曲/歌单 id 派生 | 不动 UI；真实图后续给 `CoverArt.set_pixmap()` 加一条即可 |
+| 歌词 | 官方 `/api/song/lyric` 的 `lrc.lyric`，解析成本地 `(ms, text)` | 与 `LyricView` 现有入参完全一致 |
+| 分页 | 搜索先做「首屏 30 条」，滚动加载放 P3 之后 | 先让功能成立，再谈体验 |
+| 播放失败 | `available=False` 但有 `fallback` → 播试听并标注；都没有 → 跳过并提示 | 与 `ResolveOutcome` 语义一致 |
+| 缓存 | 列表 5min / 详情 10min / 直链 `min(expi-120, 900)` | 已在 store 层实现，页面不用管 |
+| 线程 | 所有请求走 `QtAsyncBridge`，回调在主线程 | 避免 UI 线程阻塞 |
+
+---
+
+## 4. 涉及文件清单（按阶段）
+
+```
+P0 新增  services/catalog.py  services/lyrics.py            ✅
+   新增  api/modules/{playlist,lyric,personalized}.py       ✅
+   新增  api/models/{playlist,lyric,personalized}.py        ✅
+   改动  data.py（Playlist + desc 字段）                     ✅
+   测试  tests/{test_catalog,test_lyrics,test_modules_ui}.py ✅
+P1 改动  pages/home.py（+2 个方法，抽 2 个私有方法）         ✅
+   改动  main_window.py（异步拉取 + 桥接 + 退出清理）          ✅
+P2 改动  main_window.py（open_playlist 异步化）               ✅
+   改动  pages/playlist.py（简介用真实 desc）                 ✅
+P3 改动  pages/search.py（set_results + resultsRequested + 防抖）   ✅
+   改动  main_window.py（320ms 防抖 + 按 Tab 懒加载）              ✅
+   新增  api/models/search.py（ArtistHit / AlbumHit / PlaylistHit）✅
+   改动  api/modules/search.py（SearchKind + 四类函数）            ✅
+   测试  test_search.py / test_catalog.py 补 4 类用例              ✅
+P3.5 新增 services/covers.py（异步下载 + 磁盘缓存 + ready 信号）      ✅
+     改动 widgets/{cover,vinyl}.py（cover_url + 空态回落）           ✅
+     改动 data.py（Track/Playlist + cover_url）  services/catalog.py  ✅
+     测试 tests/test_covers.py（4 项）                                ✅
+P4 改动  pages/now_playing.py（set_lyrics）                            ✅
+     改动  main_window.py（切歌拉歌词）  widgets/lyrics.py（幽灵行）  ✅
+P5 新增  services/secret_store.py（AES-GCM / DPAPI）
+   新增  services/login_browser.py（QWebEngineView + cookie 抓取）
+   改动  widgets/sidebar.py（+1 个方法）  main_window.py（登录态联动）
+P6 新增  services/download.py  改动 pages/download.py（模拟 → 真实）
+P7 新增  docs/README-api.md
+```
+
+> 每个阶段都只「加方法 / 换内部实现」，不改布局与样式表。
+
+---
+
+## 5. 决策记录（2026-10-24 已确认）
+
+| # | 议题 | 决定 |
+|---|---|---|
+| 1 | 登录方式 | **开浏览器登录 → 抓 Cookie → 加密存本地**（不实现 weapi，也不用扫码接口） |
+| 2 | 播放内核 | **先保留虚拟时钟**，数据全部接完再换 `QMediaPlayer` |
+| 3 | 下载范围 | **统统允许下载**；界面与文档标注「仅供个人学术研究，严禁商业使用与传播」 |
+| 4 | 封面 | **真实封面优先，月牙只做空态**（未加载/失败/无图时回落） |
+
+---
+
+## 6. 风险与依赖
+
+1. **浏览器登录的依赖**：内嵌登录要 `PyQt6-WebEngine`（约 150MB，需 `pip install PyQt6-WebEngine`）。
+   装不上就退化为「粘贴 Cookie」输入框，功能不丢。
+2. **接口随时可能变**：所有模块都过 pydantic 校验，变了会报 `PARSE_ERROR` 而不是脏数据；
+   `tests/fixtures` 里存的是真实回包，字段漂移会先让单测红。
+3. **UI 与数据解耦的边界**：页面只认 `Track`/`Playlist`，一旦发现某页需要新字段
+   （比如专辑页要发行时间），先在 `data.py` 加字段、再在 `catalog` 里映射，不要在页面里读接口模型。
+4. **Cookie 的安全边界**：加密文件只存 `MUSIC_U` / `__csrf` / `NMTID` 三个键，
+   主密钥走 DPAPI；日志里这些键一律打码（`core/logging.py` 已实现）。
+
+---
+
+## 7. 建议的执行顺序
+
+P5（浏览器登录 + 我的音乐）→ P6（下载）→ P7（收尾）；
+音频替换等 P5 完成后再单独一轮，那时「会员态 + 直链 + 队列」都已是真数据，换内核风险最低。
+
+如果只有一轮时间：做 P5 的「登录 + Cookie 落盘」，它解锁侧栏和喜欢功能，是剩下最大的一块。

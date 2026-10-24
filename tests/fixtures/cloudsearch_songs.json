@@ -1,0 +1,303 @@
+{
+  "code": 200,
+  "result": {
+    "songs": [
+      {
+        "no": 5,
+        "copyright": 0,
+        "fee": 1,
+        "privilege": {
+          "flag": 3638276,
+          "code": 0,
+          "dlLevel": "none",
+          "subp": 1,
+          "fl": 0,
+          "fee": 1,
+          "dl": 0,
+          "plLevel": "none",
+          "maxBrLevel": "vivid",
+          "rightSource": 0,
+          "maxbr": 999000,
+          "id": 509781655,
+          "sp": 7,
+          "payed": 0,
+          "st": 0,
+          "chargeInfoList": [
+            {
+              "rate": 128000,
+              "chargeType": 1
+            },
+            {
+              "rate": 192000,
+              "chargeType": 1
+            },
+            {
+              "rate": 320000,
+              "chargeType": 1
+            },
+            {
+              "rate": 999000,
+              "chargeType": 1
+            }
+          ],
+          "freeTrialPrivilege": {
+            "userConsumable": false,
+            "resConsumable": true
+          },
+          "downloadMaxbr": 999000,
+          "downloadMaxBrLevel": "vivid",
+          "cp": 1,
+          "preSell": false,
+          "playMaxBrLevel": "vivid",
+          "cs": false,
+          "toast": false,
+          "playMaxbr": 999000,
+          "flLevel": "none",
+          "pl": 0
+        },
+        "mst": 9,
+        "pst": 0,
+        "pop": 100.0,
+        "dt": 238698,
+        "rtype": 0,
+        "s_id": 0,
+        "rtUrls": [],
+        "resourceState": true,
+        "id": 509781655,
+        "sq": {
+          "br": 918368,
+          "fid": 0,
+          "size": 27401646,
+          "vd": -26951.0,
+          "sr": 48000
+        },
+        "st": 0,
+        "cd": "1",
+        "publishTime": 1507046400000,
+        "cf": "",
+        "originCoverType": 1,
+        "h": {
+          "br": 320000,
+          "fid": 0,
+          "size": 9550125,
+          "vd": -26954.0,
+          "sr": 48000
+        },
+        "mv": 0,
+        "al": {
+          "picUrl": "http://p3.music.126.net/yD9vbpuILH-tqNRIaP640g==/109951163038292176.jpg",
+          "name": "中国新歌声第二季 第13期",
+          "tns": [],
+          "pic_str": "109951163038292176",
+          "id": 36412633,
+          "pic": 109951163038292176
+        },
+        "l": {
+          "br": 128000,
+          "fid": 0,
+          "size": 3820077,
+          "vd": -22587.0,
+          "sr": 48000
+        },
+        "m": {
+          "br": 192000,
+          "fid": 0,
+          "size": 5730093,
+          "vd": -24349.0,
+          "sr": 48000
+        },
+        "version": 23,
+        "cp": 0,
+        "alia": [],
+        "djId": 0,
+        "single": 0,
+        "ar": [
+          {
+            "name": "周杰伦",
+            "tns": [],
+            "alias": [
+              "Jay Chou",
+              "周董"
+            ],
+            "id": 6452,
+            "alia": [
+              "Jay Chou",
+              "周董"
+            ]
+          },
+          {
+            "name": "李硕",
+            "tns": [],
+            "alias": [],
+            "id": 12010120
+          },
+          {
+            "name": "张鑫",
+            "tns": [],
+            "alias": [],
+            "id": 12319226
+          }
+        ],
+        "ftype": 0,
+        "t": 0,
+        "v": 57,
+        "name": "想你就写信 (Live)",
+        "mark": 17179942912
+      },
+      {
+        "no": 1,
+        "rt": "600902000009484210",
+        "copyright": 1,
+        "fee": 8,
+        "privilege": {
+          "flag": 3637508,
+          "code": 0,
+          "dlLevel": "none",
+          "subp": 1,
+          "fl": 320000,
+          "fee": 8,
+          "dl": 0,
+          "plLevel": "exhigh",
+          "maxBrLevel": "vivid",
+          "rightSource": 0,
+          "maxbr": 999000,
+          "id": 5257138,
+          "sp": 7,
+          "payed": 0,
+          "st": 0,
+          "chargeInfoList": [
+            {
+              "rate": 128000,
+              "chargeType": 0
+            },
+            {
+              "rate": 192000,
+              "chargeType": 0
+            },
+            {
+              "rate": 320000,
+              "chargeType": 0
+            },
+            {
+              "rate": 999000,
+              "chargeType": 1
+            }
+          ],
+          "freeTrialPrivilege": {
+            "userConsumable": false,
+            "resConsumable": false
+          },
+          "downloadMaxbr": 999000,
+          "downloadMaxBrLevel": "vivid",
+          "cp": 1,
+          "preSell": false,
+          "playMaxBrLevel": "vivid",
+          "cs": false,
+          "toast": false,
+          "playMaxbr": 999000,
+          "flLevel": "exhigh",
+          "pl": 320000
+        },
+        "mst": 9,
+        "pst": 0,
+        "pop": 100.0,
+        "dt": 319039,
+        "rtype": 0,
+        "s_id": 0,
+        "rtUrls": [],
+        "resourceState": true,
+        "id": 5257138,
+        "sq": {
+          "br": 1619359,
+          "fid": 0,
+          "size": 64579972,
+          "vd": -37132.0,
+          "sr": 44100
+        },
+        "st": 0,
+        "cd": "1",
+        "publishTime": 1170604800000,
+        "cf": "",
+        "originCoverType": 1,
+        "h": {
+          "br": 320001,
+          "fid": 0,
+          "size": 12764517,
+          "vd": -37140.0,
+          "sr": 44100
+        },
+        "mv": 0,
+        "al": {
+          "picUrl": "http://p3.music.126.net/81BsxxhomJ4aJZYvEbyPkw==/109951165671182684.jpg",
+          "name": "男女情歌对唱冠军全记录",
+          "tns": [],
+          "pic_str": "109951165671182684",
+          "id": 512175,
+          "pic": 109951165671182684
+        },
+        "l": {
+          "br": 128001,
+          "fid": 0,
+          "size": 5105833,
+          "vd": -32841.0,
+          "sr": 44100
+        },
+        "m": {
+          "br": 192001,
+          "fid": 0,
+          "size": 7658728,
+          "vd": -34534.0,
+          "sr": 44100
+        },
+        "version": 686,
+        "cp": 7001,
+        "alia": [],
+        "djId": 0,
+        "single": 0,
+        "ar": [
+          {
+            "name": "周杰伦",
+            "tns": [],
+            "alias": [
+              "Jay Chou",
+              "周董"
+            ],
+            "id": 6452,
+            "alia": [
+              "Jay Chou",
+              "周董"
+            ]
+          },
+          {
+            "name": "温岚",
+            "tns": [],
+            "alias": [
+              "Landy Wen"
+            ],
+            "id": 9612,
+            "alia": [
+              "Landy Wen"
+            ]
+          },
+          {
+            "name": "吴宗宪",
+            "tns": [],
+            "alias": [
+              "Jacky Wu"
+            ],
+            "id": 5360,
+            "alia": [
+              "Jacky Wu"
+            ]
+          }
+        ],
+        "ftype": 0,
+        "t": 0,
+        "v": 720,
+        "name": "屋顶",
+        "mark": 17179877376
+      }
+    ],
+    "songCount": 276
+  }
+}

@@ -1,0 +1,85 @@
+{
+  "hasTaste": false,
+  "code": 200,
+  "category": 0,
+  "result": [
+    {
+      "id": 8639256290,
+      "type": 0,
+      "name": "喜欢简单的事干净的东西和清楚的感觉",
+      "copywriter": "",
+      "picUrl": "https://p3.music.126.net/5uoNKeSIoktU8PQjkP986Q==/109951168828677530.jpg",
+      "canDislike": true,
+      "trackNumberUpdateTime": 1701014979914,
+      "playCount": 903800.0,
+      "trackCount": 40,
+      "highQuality": false,
+      "alg": "byplaylist_play_ol_swing"
+    },
+    {
+      "id": 2067038343,
+      "type": 0,
+      "name": "[节奏控] 超带感的英文歌",
+      "copywriter": "",
+      "picUrl": "https://p3.music.126.net/F3tHVwnVzgZz-uiLTX32-Q==/109951165622292839.jpg",
+      "canDislike": true,
+      "trackNumberUpdateTime": 1791723949603,
+      "playCount": 5263900.0,
+      "trackCount": 471,
+      "highQuality": false,
+      "alg": "byplaylist_play_ol_swing"
+    },
+    {
+      "id": 7839967771,
+      "type": 0,
+      "name": "2025全网最火超好听热歌精选",
+      "copywriter": "",
+      "picUrl": "https://p3.music.126.net/b_x0-XY-kmIzwDI4tYJHPQ==/109951168170637933.jpg",
+      "canDislike": true,
+      "trackNumberUpdateTime": 1671767117497,
+      "playCount": 332075.0,
+      "trackCount": 143,
+      "highQuality": false,
+      "alg": "byplaylist_play_ol_swing"
+    },
+    {
+      "id": 2561932591,
+      "type": 0,
+      "name": "饮完这杯苦酒，笑叹人生几何.",
+      "copywriter": "",
+      "picUrl": "https://p4.music.126.net/YVZ7vZRKdAYCpVuwNLMgtw==/109951171310414278.jpg",
+      "canDislike": true,
+      "trackNumberUpdateTime": 1791740387224,
+      "playCount": 89114.0,
+      "trackCount": 242,
+      "highQuality": false,
+      "alg": "byplaylist_play_ol_swing"
+    },
+    {
+      "id": 7109949853,
+      "type": 0,
+      "name": "人间一两风，可填十万八千梦",
+      "copywriter": "",
+      "picUrl": "https://p3.music.126.net/G-VlAh9pdhQ8s9CTfTYG5A==/109951167556052400.jpg",
+      "canDislike": true,
+      "trackNumberUpdateTime": 1791902539117,
+      "playCount": 32104.0,
+      "trackCount": 78,
+      "highQuality": false,
+      "alg": "byplaylist_play_ol_swing"
+    },
+    {
+      "id": 12607027869,
+      "type": 0,
+      "name": "丝路恋语：异域韵律的浪漫邂逅",
+      "copywriter": "",
+      "picUrl": "https://p3.music.126.net/1F1DXiMchoJ9sbCi4i2I2A==/109951172098988660.jpg",
+      "canDislike": true,
+      "trackNumberUpdateTime": 1766145783221,
+      "playCount": 32720.0,
+      "trackCount": 453,
+      "highQuality": false,
+      "alg": "byplaylist_play_ol_swing"
+    }
+  ]
+}
