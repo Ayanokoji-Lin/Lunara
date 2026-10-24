@@ -1,67 +1,108 @@
-# Lunara
+<div align="center">
 
-> 深空、星轨、月光 —— 基于 PyQt6 的沉浸式音乐播放器界面。
+<img src="assets/icon.png" width="128" alt="Lunara" />
 
-底层信息架构参考网易云音乐 PC 端（侧边栏 / 顶栏 / 内容区 / 播放栏四模块），
-视觉语言完全重写：深空黑 + 星夜紫 + 月光银，无 Mica、无 Win11 大圆角。
+<h1>Lunara</h1>
 
-## 运行
+<p><b>把网易云音乐装进一个深空风格的桌面壳子</b></p>
+
+<p>真实播放 · 真实下载 · 账号登录 · 歌手 / 专辑页 · 深浅双主题</p>
+
+<p>
+<img src="https://img.shields.io/badge/Python-3.13-3776AB?logo=python&logoColor=white" alt="Python" />
+<img src="https://img.shields.io/badge/PyQt6-6.11-41CD52?logo=qt&logoColor=white" alt="PyQt6" />
+<img src="https://img.shields.io/badge/Platform-Windows-0078D6?logo=windows11&logoColor=white" alt="Platform" />
+<img src="https://img.shields.io/badge/API-NetEase%20eapi-C20C2C" alt="API" />
+<img src="https://img.shields.io/badge/Tests-257%20passed-2EA043" alt="Tests" />
+<img src="https://img.shields.io/badge/Theme-Dark%20%2F%20Light-7C3AED" alt="Theme" />
+</p>
+
+</div>
+
+---
+
+> [!IMPORTANT]
+> **本项目仅供个人学习与研究。**
+> 它不附带任何音乐内容，所有数据与音频都来自网易云音乐官方接口；代码里没有任何绕过付费的逻辑。
+> 严禁将本工具用于商业用途、二次分发或批量抓取。下载得到的文件请在 24 小时内自行删除。
+> 首次进入下载页会提示一次，同一段声明也会写进下载目录的 `NOTICE.txt`。
+
+> [!WARNING]
+> 需要登录的接口使用**你自己的账号 Cookie**，只保存在本机
+> （`%APPDATA%/Lunara/session.enc`，Windows DPAPI 加密），退出登录即删除。
+> 使用非官方客户端可能带来的账号风险，由使用者自行承担。
+
+---
+
+## 特性
+
+| 模块 | 说明 |
+|---|---|
+| **无边框窗口** | 悬浮阴影、`startSystemMove` 拖动、双击最大化、右下角缩放，最小 1056×752 |
+| **侧边栏** | 弯月 Logo、主导航、我的音乐、可折叠歌单组、3px 主色指示条 |
+| **首页** | Banner 淡入淡出轮播、5 列推荐歌单网格（播放量胶囊 / 两行截断标题） |
+| **歌单 / 歌手 / 专辑** | 同一套骨架复用：180px 封面、播放全部、QTableView 歌曲表；歌手用圆形头像 + 50 首热门 |
+| **播放页** | 唱片+歌词 / 纯歌词 / 纯封面（星光粒子）三种模式，高斯模糊背景 |
+| **真实播放** | `QMediaPlayer` + 直链解析（官方 → GD Studio 降级），进度 / 时长 / seek 全走真实音频 |
+| **搜索** | 单曲 / 歌手 / 专辑 / 歌单四类，四类都能点进详情，单曲支持「加载更多」分页 |
+| **喜欢** | 星标同步到账号（`/api/song/like`），失败自动回滚并提示 |
+| **下载** | 流式下载 + `Range` 断点续传 + SQLite 任务表；暂停、退出、断网都能续，重启自动恢复 |
+| **本地播放** | 下载完成的文件可直接播，不联网、不走直链 |
+| **主题** | 深空 / 月光白两套，设置里切换（重启生效） |
+
+## 界面
+
+| 深空主题 | 月光白主题 |
+|---|---|
+| <img src="shots/12_home_live.png" width="100%" /> | <img src="shots/26_light_home.png" width="100%" /> |
+
+| 播放页 | 歌手页 |
+|---|---|
+| <img src="shots/21_playing_live.png" width="100%" /> | <img src="shots/24_artist_page.png" width="100%" /> |
+
+| 下载 | 搜索 |
+|---|---|
+| <img src="shots/20_download_live.png" width="100%" /> | <img src="shots/07_search.png" width="100%" /> |
+
+## 快速开始
 
 ```bash
+git clone https://github.com/Ayanokoji-Lin/Lunara.git
+cd Lunara
+
 python -m venv .venv
-.venv/Scripts/activate          # Windows
+.venv/Scripts/activate
 pip install -r requirements.txt
+
 python main.py
 ```
 
 桌面上还有一个 `Lunara.bat`（用系统 Python，缺库会自动装），双击即可启动。
 
-首次运行会通过 qtawesome 加载 FontAwesome 图标字体，不依赖任何图片素材文件：
-封面优先用接口给的真实图（异步下载 + 磁盘缓存），拿不到才用 QPainter 生成的月牙封面兜底。
-
 登录功能需要 `PyQt6-WebEngine`（已写进 `requirements.txt`）；没装时应用照常运行，
-只是「登录」会退化成一句安装提示。
+只是「登录」会退化成一句安装提示。若登录窗口一片空白，多半是显卡上下文问题，
+用 `QT_OPENGL=software` 启动一次即可。
 
-## 已实现
+## 架构总览
 
-- 无边框窗口：悬浮阴影、`startSystemMove` 拖动、双击标题栏最大化、右下角缩放
-- 侧边栏：弯月 Logo、主导航、我的音乐、可折叠歌单组、3px 主色指示条
-- 首页：Banner 淡入淡出轮播、5 列推荐歌单网格（播放量胶囊 / 两行截断标题）
-- 歌单详情：180px 封面 + 柔光投影、播放全部、QTableView 歌曲表
-- 歌手页 / 专辑页：复用歌单页骨架，歌手用圆形头像 + 50 首热门，专辑给曲目与发行年
-- 搜索页：单曲列表 + 歌手 / 专辑 / 歌单网格，四类都能点进详情，单曲支持「加载更多」
-- 播放页三种模式：唱片+歌词 / 纯歌词 / 纯封面（星光粒子），高斯模糊背景
-- 播放栏：旋转小唱片、进度条点击跳转、音量、播放模式、播放队列
-- 真实播放：`QMediaPlayer` + 直链解析（官方 → GD 降级），进度 / 时长 / seek 全走真实音频
-- 喜欢：星标同步到账号（`/api/song/like`），失败自动回滚并提示
-- 本地下载：任务总览、逐条进度、暂停·重试·删除、分类筛选、批量控制；
-  真实流式下载 + Range 断点续传 + SQLite 任务表（重启自动续传）
-- 本地播放：下载完成的文件可直接播（不联网、不走直链）
-- 设置页：左分类导航 + 胶囊开关 + 下拉框 + 账号页（登录 / 退出 / 会员态）+ 外观主题
-- 侧栏「我的歌单」：登录后换成真实歌单分组，「我喜欢的音乐」直达对应歌单
+```mermaid
+flowchart LR
+    UI["pages / widgets<br/>纯 Qt 控件，只认信号"] --> Player["core/player.py<br/>QMediaPlayer + 虚拟时钟"]
+    UI --> Services["services/<br/>直链决策 · 登录态 · 下载 · 设置"]
+    Services --> API["api/<br/>eapi 组包 · 重试 · 校验 · 缓存"]
+    API --> Upstream[("网易云 eapi")]
+    Services --> GD[("GD Studio<br/>降级源")]
+    Services --> DB[("SQLite<br/>tasks.db")]
+    Player --> CDN[("音频 CDN")]
+    Services --> Disk[("下载目录<br/>+ .part")]
+```
 
-## 数据层
-
-首页（推荐歌单 / 新歌速递）、歌单详情、歌手 / 专辑、搜索四类、歌词、封面、下载、
-喜欢都已接真实数据；账号登录可用，登录后侧栏会换成真实歌单与「我喜欢的音乐」。
-
-登录方式：设置 → 账号 → 登录，会弹一个内嵌浏览器窗口，你在里面正常登录网易云，
-登录成功后自动抓取 Cookie 并用 **Windows DPAPI** 加密存到
-`%APPDATA%/Lunara/session.enc`；退出登录即删除该文件。
-若登录窗口一片空白，多半是显卡上下文问题，用 `QT_OPENGL=software` 启动一次即可。
-
-封面规则：有真实图就显示，拿不到（未加载完 / 失败 / 接口没给）才回落到程序化月牙封面——
-所以列表里看到的月牙就是「还在加载」的空态。
-
-演示歌单（`data.py` 里 id 101 起的那些）只在本地渲染，不会拿去请求接口；
-首页数据还没到时点 Banner，看到的就是这份本地内容，不会冒出一条错误提示。
-
-真实数据从网易云 eapi 走，`lunara/api/` 负责组包、重试、校验与缓存，
-`lunara/services/` 负责直链决策、登录态与模型适配，`lunara/store/` 提供 TTL-LRU 与并发单飞。
-请求层全异步，UI 不接触加密密钥，也不直接拼请求。
+请求层全异步，UI 不接触加密密钥、也不直接拼请求。页面之间不互相引用，
+导航统一走 `MainWindow.navigate(key)`；`Player` 对外只有 6 个信号 + 8 个方法，
+换内核时界面一行都不用改。
 
 直链按「官方 → GD Studio」降级：官方只给 45 秒试听（或干脆不给）时，
-自动转 GD Studio 取完整文件，并把实际码率如实标成档位。
+自动转 GD 取完整文件，并把实际码率如实标成档位。
 
 | 环境变量 | 默认 | 作用 |
 |---|---|---|
@@ -91,27 +132,21 @@ self._bridge.submit(search_songs(client, text),
                     on_error=self._show_error)
 ```
 
-自检：
+## 使用说明
 
-```bash
-.venv/Scripts/python.exe -m pytest                                   # 239 项，全打桩不联网
-LUNARA_LIVE=1 .venv/Scripts/python.exe -m pytest tests/test_live.py  # 真上游冒烟
-.venv/Scripts/python.exe tools/demo_search.py 周杰伦
-.venv/Scripts/python.exe tools/demo_player_url.py 347230 lossless
-.venv/Scripts/python.exe tools/verify_ui_live.py        # 首页 / 歌单端到端 + 截图
-.venv/Scripts/python.exe tools/smoke_login.py           # 登录窗口能否加载
-.venv/Scripts/python.exe tools/verify_account_ui.py     # 我的歌单 + 喜欢（需登录）
-.venv/Scripts/python.exe tools/verify_artist_album.py   # 歌手页 / 专辑页
-.venv/Scripts/python.exe tools/verify_download.py       # 真实下载（会写文件）
-.venv/Scripts/python.exe tools/verify_playback.py       # 真实播放（会出声）
-.venv/Scripts/python.exe tools/verify_error_bar.py      # 错误提示条 + 一次播放只解析一次
-```
+**播放**：点播放先解析直链，再交给 `QMediaPlayer`。解析是异步的，切歌后迟到的结果会被丢弃
+（内部用单调递增的 `seq` 判断），所以连续快速切歌不会串台。进度条与歌词都用**真实时长**，
+和接口给的 `duration` 差几秒属于正常。
 
-分层、错误码、已验证的上游事实见 `docs/API-PLAN.md`，
-UI 接真数据的排期与进度见 `docs/UI-INTEGRATION-PLAN.md`，
-剩余功能的记录见 `docs/PLAN-REMAINING.md`。
+**下载**：任务表在 `%APPDATA%/Lunara/tasks.db`，文件落到设置里的下载目录
+（默认 `D:\Music\Lunara`）。暂停、退出应用、断网都会保留 `.part`，恢复后从断点继续；
+删除任务只删任务与 `.part`，已经下完的文件不会被动。设置 → 下载可以改目录与并发数。
 
-## 快捷键
+**主题**：设置 → 播放 → 外观主题。切换会写进 `%APPDATA%/Lunara/settings.json`，
+**重启应用后生效**——页面里不少颜色是在构造时写进内联样式的，运行时热切换会留下旧色。
+轮播图与封面属于「画作」，不跟随主题：底图始终是深色，标题固定用浅色。
+
+### 快捷键
 
 | 按键 | 功能 |
 |---|---|
@@ -120,57 +155,40 @@ UI 接真数据的排期与进度见 `docs/UI-INTEGRATION-PLAN.md`，
 | `Ctrl + ↑ / ↓` | 音量 ±5 |
 | `Esc` | 返回上一页 |
 
-## 播放说明
-
-- 点播放时先解析直链，再交给 `QMediaPlayer`；解析是异步的，切歌后迟到的结果会被丢弃
-  （内部用单调递增的 `seq` 判断），所以连续快速切歌不会串台。
-- 进度条与歌词都用**真实时长**，和接口给的 `duration` 差几秒是正常的（编码差异）。
-- 未登录 / 非会员遇到 VIP 歌：官方只给 45 秒，会自动转 GD 拿完整文件；
-  两边都拿不到时顶部提示「只提供 45 秒试听片段」，不会假装在放整首。
-
-## 下载说明
-
-**下载内容仅供个人学习、研究使用；音乐版权归网易云音乐及版权方所有。**
-严禁任何形式的商业使用、二次分发或批量抓取。首次进入下载页会提示一次，
-同时把同样的声明写进下载目录的 `NOTICE.txt`。
-
-- 官方直链拿不到完整文件时（未登录 / 非会员），会自动走 GD Studio 取完整音频；
-  两边都只有 45 秒试听时，任务会失败并说明原因，不会把试听片段存成整首。
-- 暂停、退出应用、断网都会保留 `.part` 文件，恢复后从断点继续。
-- 删除任务只删任务与 `.part`，已经下完的文件不会被动。
-- 任务表在 `%APPDATA%/Lunara/tasks.db`，文件落到设置里的下载目录（默认 `D:\Music\Lunara`）。
-
-## 主题
-
-设置 → 播放 → 外观主题：`深空`（默认）/ `月光白`。切换会写进
-`%APPDATA%/Lunara/settings.json`，**重启应用后生效**——页面里不少颜色是在构造时
-写进内联样式的，运行时热切换会留下旧色。
-
-轮播图与封面属于「画作」，不跟随主题：底图始终是深色，标题固定用浅色。
-
-## 说明
-
-播放和下载都已经是真的了。音频走 `QMediaPlayer`，直链由 `services/player_url`
-解析（官方拿不到完整文件时降级 GD Studio）；没有音频设备或播演示曲目时自动退回
-虚拟时钟，界面表现一致。
-
-界面截图见 `shots/`，架构与工程细节见 `docs/ARCHITECTURE.md`。
-
-## 已知缺口
-
-- **收藏歌单**：`/api/playlist/subscribe` 在 eapi 下恒返回 405「操作过于频繁」，暂不可用。
-- **已喜欢的歌**：启动时不拉「我喜欢的音乐」的 id 列表，所以已喜欢的歌初始是未点亮状态；
-  再点一次是幂等的（服务端按 `like=true` 再确认）。
-- **本地曲库扫描**：现在只能播「下载页里已完成的文件」，还没有扫描任意目录、读标签（`mutagen`）。
-
-## 图标
-
-`assets/icon.ico`（含 16–256 共 7 个尺寸）由 `tools/make_icon.py` 生成，
-画法与侧栏 Logo 同源：深空圆角底板 + 月光渐变弯月 + 两颗四角星。
-改颜色或造型就改脚本再跑一次，不用手工导出：
+## 开发与测试
 
 ```bash
-.venv/Scripts/python.exe tools/make_icon.py
+.venv/Scripts/python.exe -m pytest                                   # 257 项，全打桩不联网
+LUNARA_LIVE=1 .venv/Scripts/python.exe -m pytest tests/test_live.py  # 真上游冒烟
+
+.venv/Scripts/python.exe tools/verify_ui_live.py        # 首页 / 歌单端到端 + 截图
+.venv/Scripts/python.exe tools/verify_artist_album.py   # 歌手页 / 专辑页
+.venv/Scripts/python.exe tools/verify_download.py       # 真实下载（会写文件）
+.venv/Scripts/python.exe tools/verify_playback.py       # 真实播放（会出声）
+.venv/Scripts/python.exe tools/verify_error_bar.py      # 错误提示条 + 一次播放只解析一次
+.venv/Scripts/python.exe tools/make_icon.py             # 重新生成图标
+```
+
+测试全部用 `httpx.MockTransport` 打桩，`tests/fixtures/` 存真实回包——
+上游字段漂移时，单测会先红，不用等界面报错。
+
+## 目录结构
+
+```
+Lunara/
+├─ main.py                  入口：QSS、字体、窗口
+├─ lunara/
+│  ├─ theme.py              设计令牌 + QSS 模板（$var 注入）
+│  ├─ data.py               演示数据与数据类型（Track / Playlist / DownloadTask）
+│  ├─ core/player.py        播放内核：QMediaPlayer / 虚拟时钟双引擎
+│  ├─ api/                  eapi 客户端、模型、模块、错误码
+│  ├─ services/             直链决策、登录态、下载、设置、模型适配、异步桥
+│  ├─ pages/                首页 / 歌单 / 搜索 / 播放 / 下载 / 设置
+│  └─ widgets/              侧栏、播放栏、封面、进度条、提示条…
+├─ assets/icon.ico          应用图标（16–256 共 7 档）
+├─ tools/                   验收脚本与打包脚本
+├─ tests/                   257 项单测 + 真实回包夹具
+└─ docs/                    API 事实、架构、接线计划
 ```
 
 ## 打包
@@ -181,13 +199,23 @@ dist/Lunara/Lunara.exe
 ```
 
 产物在 `dist/Lunara/`（约 597 MB，主要是 QtWebEngine 的 Chromium），不入库。
-重新打包会把旧目录改名挪到 `dist/.old/`（删上千个文件太慢，也容易被打断）。
+重新打包会把旧目录改名挪到 `dist/.old/`——删上千个文件太慢，也容易被打断。
 想更小可以手动排除未用的 Qt 模块，或者去掉内嵌登录。
 
-## 版本管理
+## 已知缺口
 
-- 分支只有 `main`，一个阶段一个提交，消息前缀用 `feat / fix / test / docs / chore`。
-- 入库：源码、`tests/fixtures`（真实回包，字段漂移时单测会先红）、`tools`、`docs`、`shots`。
-- 不入库：`.venv/`、`__pycache__/`、`.pytest_cache/`、`.secrets/`、`*.enc`、`covers/`、`.workbuddy-ai/`、`dist/`、`build/`。
-- **登录态与主密钥永不入库**（`session.enc` 已在 `.gitignore` 里）。
-- 回滚点：`git tag` 里的 `baseline-*` 标记了每个可验收的状态。
+- **收藏歌单**：`/api/playlist/subscribe` 在 eapi 下恒返回 405「操作过于频繁」，暂不可用。
+- **已喜欢的歌**：启动时不拉「我喜欢的音乐」的 id 列表，所以已喜欢的歌初始是未点亮状态；
+  再点一次是幂等的（服务端按 `like=true` 再确认）。
+- **本地曲库扫描**：现在只能播「下载页里已完成的文件」，还没有扫描任意目录、读标签（`mutagen`）。
+
+## 声明
+
+本项目与网易云音乐官方无关，仅用于个人学习 Qt 与桌面端工程实践。
+所有音乐版权归网易云音乐及版权方所有，请支持正版。
+若权利人认为本项目存在侵权，请通过 issue 联系，我会立即处理。
+
+文档：数据层事实见 [`docs/API-PLAN.md`](docs/API-PLAN.md)，
+架构与工程约定见 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)，
+接线进度见 [`docs/UI-INTEGRATION-PLAN.md`](docs/UI-INTEGRATION-PLAN.md)，
+剩余功能记录见 [`docs/PLAN-REMAINING.md`](docs/PLAN-REMAINING.md)。
