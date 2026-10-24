@@ -115,6 +115,7 @@ class PlaylistPage(BasePage):
 
         self.lbl_list = SectionHeader("歌曲列表", "共 0 首")
         pl.addWidget(self.lbl_list)
+        pl.addWidget(self.filter)
         self.table = TrackTable()
         pl.addWidget(self.table)
         self.body.addWidget(panel)
