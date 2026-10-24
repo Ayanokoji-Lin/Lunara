@@ -88,9 +88,6 @@ P_HOME, P_PLAYLIST, P_SEARCH, P_SETTINGS, P_NOW, P_EMPTY, P_DOWNLOAD = range(7)
 #: 单曲搜索每页条数（「加载更多」按这个步进）
 SEARCH_PAGE_SIZE = 30
 
-#: 单曲搜索每页条数（「加载更多」按这个步进）
-SEARCH_PAGE_SIZE = 30
-
 EMPTY_PAGES = {
     "podcast": ("星轨播客", "订阅你喜欢的播客，让夜晚有声音陪着。", "fa5s.podcast"),
     "video": ("潮汐视频", "月海实录、现场演出与 4K 沉浸影像。", "fa5s.film"),
