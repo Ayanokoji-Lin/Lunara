@@ -129,7 +129,7 @@ QFrame#Sidebar {
 }
 QLabel#SidebarSection {
     color: $text_dim;
-    font-size: 11px;
+    font-size: 12px;
     padding: 0 0 0 14px;
 }
 QPushButton#SidebarItem {
@@ -138,10 +138,10 @@ QPushButton#SidebarItem {
     border-radius: $radius;
     color: $text_sub;
     text-align: left;
-    padding-left: 36px;
+    padding-left: 38px;
     padding-right: 10px;
-    min-height: 34px;
-    font-size: 13px;
+    min-height: 38px;
+    font-size: 14px;
 }
 QPushButton#SidebarItem:hover {
     background-color: $bg_hover;
@@ -162,9 +162,9 @@ QPushButton#SidebarSubItem {
     border: none;
     color: $text_dim;
     text-align: left;
-    padding-left: 36px;
-    min-height: 28px;
-    font-size: 12px;
+    padding-left: 38px;
+    min-height: 30px;
+    font-size: 13px;
 }
 QPushButton#SidebarSubItem:hover { color: $text_main; }
 QPushButton#SidebarSubItem:checked { color: $primary; }
@@ -268,6 +268,22 @@ QPushButton#PrimaryPill {
 }
 QPushButton#PrimaryPill:hover { background-color: $primary_hover; }
 QPushButton#PrimaryPill:pressed { background-color: $primary_press; }
+QPushButton#SmallPill {
+    background-color: $bg_hover;
+    color: $text_sub;
+    border: 1px solid $border;
+    border-radius: 9px;
+    padding: 0 12px;
+    min-height: 26px;
+    max-height: 26px;
+    font-size: 11px;
+}
+QPushButton#SmallPill:hover {
+    background-color: rgba(255, 255, 255, 0.10);
+    color: $text_main;
+    border: 1px solid $bg_elev;
+}
+
 QPushButton#GhostPill {
     background-color: $bg_hover;
     color: $text_main;
@@ -566,6 +582,35 @@ QPushButton#QualityChip:hover {
     background-color: rgba(139, 92, 246, 0.28);
     border: 1px solid rgba(139, 92, 246, 0.7);
 }
+
+/* ===================== 播放列表 ===================== */
+QFrame#QueuePanel {
+    background-color: $bg_panel;
+    border: 1px solid $border;
+    border-radius: 14px;
+}
+QWidget#QueueHead {
+    background: transparent;
+    border-bottom: 1px solid $border_soft;
+}
+QPushButton#QueueAction {
+    background: transparent;
+    border: none;
+    color: $text_sub;
+    font-size: 11px;
+    padding: 4px 6px;
+    border-radius: 6px;
+}
+QPushButton#QueueAction:hover {
+    background-color: $bg_hover;
+    color: $text_main;
+}
+QPushButton#QueueRemove {
+    background: transparent;
+    border: none;
+    border-radius: 11px;
+}
+QPushButton#QueueRemove:hover { background-color: $bg_hover; }
 
 /* ===================== 提示框 ===================== */
 QDialog#LunaraDialog {

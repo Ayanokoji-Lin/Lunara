@@ -62,7 +62,7 @@ class SidebarItem(QPushButton):
         self.setCheckable(True)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         self.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        self.setIconSize(QSize(16, 16))
+        self.setIconSize(QSize(18, 18))
         if icon_name:
             self.setIcon(icon(icon_name, THEME["text_sub"]))
 
@@ -80,7 +80,7 @@ class SidebarItem(QPushButton):
                               THEME["primary"] if on else THEME["text_sub"]))
 
     def resizeEvent(self, e) -> None:
-        self._indicator.setGeometry(0, (self.height() - 18) // 2, 3, 18)
+        self._indicator.setGeometry(0, (self.height() - 20) // 2, 3, 20)
         self._indicator.raise_()
         super().resizeEvent(e)
 

@@ -26,6 +26,7 @@ from PyQt6.QtWidgets import (
 )
 
 from ..core.player import Player
+from ..widgets.common import RoundedCombo, style_combo
 from ..widgets.dialog import confirm
 from ..widgets.anim import Coalescer
 from ..core.player import Player
@@ -128,6 +129,10 @@ class DownloadRow(QFrame):
         self.bar.set_value(t.progress)
         self.bar.set_state("downloading" if t.state == "downloading" else
                            ("done" if t.state == "done" else "paused"))
+        # 已完成 / 排队中不需要进度条，留着反而像「有东西在跑」
+        self.bar.setVisible(t.state in ("downloading", "paused", "failed"))
+        # 已完成 / 排队中不需要进度条，留着反而像「有东西在跑」
+        self.bar.setVisible(t.state in ("downloading", "paused", "failed"))
 
         bg, fg, border = STATE_STYLE.get(t.state, STATE_STYLE["paused"])
         self.chip.setText(STATE_TEXT.get(t.state, t.state))
@@ -254,13 +259,11 @@ class DownloadPage(BasePage):
         bh.addWidget(path_chip)
 
         self.btn_all = QPushButton("全部暂停")
-        self.btn_all.setObjectName("GhostPill")
-        self.btn_all.setFixedHeight(30)
+        self.btn_all.setObjectName("SmallPill")
         self.btn_all.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn_all.clicked.connect(self._toggle_all)
         self.btn_clear = QPushButton("清空已完成")
-        self.btn_clear.setObjectName("GhostPill")
-        self.btn_clear.setFixedHeight(30)
+        self.btn_clear.setObjectName("SmallPill")
         self.btn_clear.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn_clear.clicked.connect(self._clear_done)
         bh.addWidget(self.btn_all)
@@ -280,7 +283,8 @@ class DownloadPage(BasePage):
         self.search.textChanged.connect(lambda _: self._rebuild())
         th.addWidget(self.search, 1)
 
-        self.sort_box = QComboBox()
+        self.sort_box = RoundedCombo()
+        style_combo(self.sort_box)
         self.sort_box.addItems(["最近添加", "按歌名", "按大小", "按状态"])
         self.sort_box.setFixedWidth(120)
         self.sort_box.setFixedHeight(30)

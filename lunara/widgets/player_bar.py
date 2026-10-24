@@ -51,10 +51,14 @@ QUALITY_ORDER = ("standard", "higher", "exhigh", "lossless", "hires", "jymaster"
 class PlayerBar(QFrame):
     openNowPlaying = pyqtSignal()
     qualityChanged = pyqtSignal(str)      # 实时切音质
+    queueClearRequested = pyqtSignal()
+    queueRemoveRequested = pyqtSignal(int)
+    queueCollectRequested = pyqtSignal()
 
     def __init__(self, player: Player, parent: QWidget | None = None):
         super().__init__(parent)
         self.player = player
+        self._queue_panel = None
         self.setObjectName("PlayerBar")
         self.setFixedHeight(80)
 
@@ -266,11 +270,28 @@ class PlayerBar(QFrame):
             self.volume.setValue(getattr(self, "_last_volume", 70))
 
     def _show_queue(self) -> None:
-        menu = QMenu(self)
-        if not self.player.queue:
-            menu.addAction("播放列表是空的")
-        for i, t in enumerate(self.player.queue):
-            mark = "▶ " if i == self.player.index else "    "
-            act = menu.addAction(f"{mark}{t.title} — {t.artist}")
-            act.triggered.connect(lambda _=False, tr=t: self.player.play_track(tr))
-        menu.exec(self.btn_queue.mapToGlobal(self.btn_queue.rect().topLeft()))
+        if self._queue_panel is None:
+            from .queue_panel import QueuePanel
+
+            self._queue_panel = QueuePanel(self)
+            self._queue_panel.rowActivated.connect(self._on_queue_row)
+            self._queue_panel.rowRemoved.connect(self._on_queue_remove)
+            self._queue_panel.clearRequested.connect(self._on_queue_clear)
+            self._queue_panel.collectRequested.connect(self.queueCollectRequested)
+
+        self._queue_panel.set_tracks(list(self.player.queue), self.player.index)
+        self._queue_panel.popup_at(self.btn_queue)
+
+    def _on_queue_row(self, index: int) -> None:
+        queue = list(self.player.queue)
+        if 0 <= index < len(queue):
+            self.player.play_track(queue[index], queue)
+        self._queue_panel.hide()
+
+    def _on_queue_remove(self, index: int) -> None:
+        self.queueRemoveRequested.emit(index)
+        self._queue_panel.set_tracks(list(self.player.queue), self.player.index)
+
+    def _on_queue_clear(self) -> None:
+        self.queueClearRequested.emit()
+        self._queue_panel.set_tracks([], -1)

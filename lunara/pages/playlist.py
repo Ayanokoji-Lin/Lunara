@@ -24,7 +24,9 @@ from .base import BasePage
 
 class PlaylistPage(BasePage):
     downloadRequested = pyqtSignal(object)
-    deleteLocalRequested = pyqtSignal(object)     # list[Track] 从磁盘删除      # list[Track]
+    deleteLocalRequested = pyqtSignal(object)     # list[Track] 从磁盘删除
+    addDirectoryRequested = pyqtSignal()          # 本地曲库：添加扫描目录
+    manageDirectoriesRequested = pyqtSignal()     # 本地曲库：管理扫描目录      # list[Track]
     actionRequested = pyqtSignal(str)           # 头部额外按钮（"artist_albums" / "album_artist"）
 
     def __init__(self, player: Player, parent: QWidget | None = None):
@@ -97,6 +99,23 @@ class PlaylistPage(BasePage):
         btns.addWidget(self.btn_play)
         btns.addWidget(self.btn_extra)
         btns.addWidget(self.btn_dl)
+
+        self.btn_add_dir = QPushButton("  添加目录")
+        self.btn_add_dir.setObjectName("SmallPill")
+        self.btn_add_dir.setIcon(icon("fa5s.folder-plus", THEME["text_main"]))
+        self.btn_add_dir.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_add_dir.setToolTip("把另一个文件夹也纳入本地曲库")
+        self.btn_add_dir.clicked.connect(self.addDirectoryRequested)
+        self.btn_add_dir.hide()
+        btns.addWidget(self.btn_add_dir)
+
+        self.btn_manage_dir = QPushButton("  目录管理")
+        self.btn_manage_dir.setObjectName("SmallPill")
+        self.btn_manage_dir.setIcon(icon("fa5s.list", THEME["text_main"]))
+        self.btn_manage_dir.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_manage_dir.clicked.connect(self.manageDirectoriesRequested)
+        self.btn_manage_dir.hide()
+        btns.addWidget(self.btn_manage_dir)
         btns.addStretch(1)
         info.addLayout(btns)
         hl.addLayout(info, 1)
@@ -190,6 +209,12 @@ class PlaylistPage(BasePage):
         self.table.setVisible(not empty)
         if empty:
             self.empty.setText(self._empty_text or "这里还没有歌")
+
+    def set_local_mode(self, local: bool) -> None:
+        """本地曲库页才显示「添加目录 / 目录管理」。"""
+        self._is_local = bool(local)
+        self.btn_add_dir.setVisible(bool(local))
+        self.btn_manage_dir.setVisible(bool(local))
 
     def set_empty_text(self, text: str) -> None:
         self._empty_text = text

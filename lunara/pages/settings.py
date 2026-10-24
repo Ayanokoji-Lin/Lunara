@@ -22,6 +22,7 @@ from ..services.settings_store import (
     quality_index,
 )
 from ..theme import THEME
+from ..widgets.common import RoundedCombo, style_combo
 from ..widgets.dialog import alert
 from ..widgets.common import Divider, font
 from ..widgets.sidebar import LogoMark
@@ -136,11 +137,12 @@ class SettingsPage(BasePage):
         return panel
 
     def _combo(self, items: list[str], current: int = 0) -> QComboBox:
-        cb = QComboBox()
+        cb = RoundedCombo()
         cb.addItems(items)
         cb.setCurrentIndex(current)
         cb.setFixedWidth(148)
         cb.setCursor(Qt.CursorShape.PointingHandCursor)
+        style_combo(cb)
         return cb
 
     # ---------------- 面板 ----------------

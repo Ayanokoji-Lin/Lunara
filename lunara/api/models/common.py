@@ -5,13 +5,29 @@
 """
 from __future__ import annotations
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class StrictModel(BaseModel):
     """项目内所有上游模型的基类。"""
 
     model_config = ConfigDict(extra="ignore", populate_by_name=True, frozen=True)
+
+    @field_validator("*", mode="before")
+    @classmethod
+    def _null_strings_to_empty(cls, value, info):
+        """上游经常把 ``picUrl`` / ``nickname`` 之类给成 null。
+
+        以前一个 null 就让整包校验失败——搜「Alan Walker」直接零结果，因为
+        某几个歌手的 picUrl 是 null。这里把「字符串字段收到 None」统一降级成空串。
+        """
+        if value is None:
+            field = cls.model_fields.get(info.field_name)
+            annotation = getattr(field, "annotation", None)
+            args = getattr(annotation, "__args__", ())
+            if annotation is str or str in args:
+                return ""
+        return value
 
 
 class ArtistRef(StrictModel):

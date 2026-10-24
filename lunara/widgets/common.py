@@ -4,6 +4,7 @@ from __future__ import annotations
 from PyQt6.QtCore import QPointF, QRectF, QSize, Qt, pyqtSignal
 from PyQt6.QtGui import QColor, QFont, QPainter, QTextLayout, QTextOption
 from PyQt6.QtWidgets import (
+    QComboBox,
     QFrame,
     QHBoxLayout,
     QLabel,
@@ -129,3 +130,83 @@ class Chip(QLabel):
             f" padding: 1px 8px; font-size: 10px; }}"
         )
         self.setFixedHeight(20)
+
+
+def _popup_qss() -> str:
+    from ..theme import THEME
+
+    return f"""
+    QListView {{
+        background-color: {THEME['bg_elev']};
+        border: 1px solid {THEME['border']};
+        border-radius: 10px;
+        padding: 6px;
+        outline: 0;
+        color: {THEME['text_main']};
+    }}
+    QListView::item {{
+        min-height: 30px;
+        padding-left: 10px;
+        border: none;
+        border-radius: 6px;
+        color: {THEME['text_main']};
+    }}
+    QListView::item:hover {{
+        background-color: {THEME['bg_hover']};
+    }}
+    QListView::item:selected {{
+        background-color: {THEME['primary_soft']};
+        color: {THEME['text_main']};
+        border: none;
+    }}
+    """
+
+
+def round_popup(combo) -> None:
+    """把下拉弹层做成圆角卡片。
+
+    QComboBox 的弹层是**独立顶层窗口**，``QComboBox QAbstractItemView`` 这类
+    后代选择器对它不生效（父子关系已断开），所以只能直接给 view 套样式，
+    再把窗口设成半透明，圆角才看得见。
+    """
+    from PyQt6.QtCore import Qt
+
+    view = combo.view()
+    window = view.window()
+    window.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
+    window.setWindowFlag(Qt.WindowType.FramelessWindowHint, True)
+    window.setStyleSheet("background: transparent; border: none;")
+    view.setStyleSheet(_popup_qss())
+    view.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+    view.setFrameShape(view.Shape.NoFrame)
+
+
+def style_combo(combo) -> None:
+    """让下拉弹层也走 QSS 的圆角。
+
+    QComboBox 的弹出列表是一个**独立顶层窗口**，默认不透明、无边框，
+    所以 QSS 里的 border-radius 看起来不起作用（截图里就是一块方角深色板）。
+    把它设成半透明 + 无边框的 Popup，圆角才真正生效。
+    """
+    from PyQt6.QtCore import Qt
+    from PyQt6.QtWidgets import QListView
+
+    view = combo.view()
+    if isinstance(view, QListView):
+        view.setSpacing(2)
+        view.setUniformItemSizes(True)
+    window = view.window()
+    window.setWindowFlags(Qt.WindowType.Popup
+                          | Qt.WindowType.FramelessWindowHint
+                          | Qt.WindowType.NoDropShadowWindowHint)
+    window.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
+    window.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+    view.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+
+
+class RoundedCombo(QComboBox):
+    """弹层自动圆角的 QComboBox。"""
+
+    def showPopup(self) -> None:          # noqa: N802 - Qt 命名
+        super().showPopup()
+        round_popup(self)

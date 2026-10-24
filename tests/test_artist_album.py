@@ -63,12 +63,13 @@ def test_album_detail_parses() -> None:
 
 
 def test_album_tolerates_null_description() -> None:
+    """上游 description 给 null 时降级成空串（不再整包校验失败）。"""
     detail = AlbumDetail.model_validate({
         "album": {"id": 1, "name": "无简介", "description": None},
         "songs": [],
     })
 
-    assert detail.album.description is None
+    assert detail.album.description == ""
     assert detail.album.artist_names == "未知歌手"
 
 

@@ -15,7 +15,8 @@ from PyQt6.QtWidgets import (
     QGraphicsDropShadowEffect,
     QHBoxLayout,
     QLineEdit,
-    QMessageBox,
+    QFileDialog,
+    QMenu,
     QSizeGrip,
     QSystemTrayIcon,
     QStackedWidget,
@@ -210,6 +211,8 @@ class MainWindow(QWidget):
         self.playlist_page.actionRequested.connect(self._on_page_action)
         self.playlist_page.downloadRequested.connect(self._enqueue_downloads)
         self.playlist_page.deleteLocalRequested.connect(self._delete_local_files)
+        self.playlist_page.addDirectoryRequested.connect(self._add_library_dir)
+        self.playlist_page.manageDirectoriesRequested.connect(self._manage_library_dirs)
         self.download_page.taskDeleted.connect(self._on_task_deleted)
         for table in (self.playlist_page.table, self.search_page.table):
             table.playNextRequested.connect(self._on_play_next)
@@ -229,6 +232,12 @@ class MainWindow(QWidget):
         self.topbar.forwardClicked.connect(self.go_forward)
         self.player_bar.openNowPlaying.connect(self.open_now_playing)
         self.player_bar.qualityChanged.connect(self._on_quality_changed)
+        self.player_bar.queueClearRequested.connect(self._on_queue_clear)
+        self.player_bar.queueRemoveRequested.connect(self._on_queue_remove)
+        self.player_bar.queueCollectRequested.connect(self._on_queue_collect)
+        self.player_bar.queueClearRequested.connect(self._on_queue_clear)
+        self.player_bar.queueRemoveRequested.connect(self._on_queue_remove)
+        self.player_bar.queueCollectRequested.connect(self._on_queue_collect)
         self.player.urlRequested.connect(self._on_url_requested)
         self.player.errorOccurred.connect(self._on_player_error)
         self.player.trialModeChanged.connect(self._on_trial_changed)
@@ -392,7 +401,7 @@ class MainWindow(QWidget):
         )
 
     def open_artist(self, artist_id: int) -> None:
-        self.playlist_page._is_local = False
+        self.playlist_page.set_local_mode(False)
         self.playlist_page.table.set_allow_file_delete(False)
         """歌手页：复用歌单页的骨架，头像取圆形、标签写「歌手」。"""
         self._show(P_PLAYLIST)
@@ -403,7 +412,7 @@ class MainWindow(QWidget):
         )
 
     def open_album(self, album_id: int) -> None:
-        self.playlist_page._is_local = False
+        self.playlist_page.set_local_mode(False)
         self.playlist_page.table.set_allow_file_delete(False)
         """专辑页：同样复用歌单页，标签写「专辑」。"""
         self._show(P_PLAYLIST)
@@ -681,19 +690,71 @@ class MainWindow(QWidget):
     def _open_library(self) -> None:
         self._show_local_library()
 
+    def _library_dirs(self) -> list[str]:
+        """本地曲库的扫描目录：默认就是下载目录，可再加别的文件夹。"""
+        dirs = [str(d) for d in (self._settings.get("library_dirs") or []) if d]
+        download = str(self._settings.download_dir)
+        if download not in dirs:
+            dirs.insert(0, download)
+        return dirs
+
     def _show_local_library(self) -> None:
-        root = self._settings.download_dir
-        tracks = scan(root)
-        playlist = Playlist(id=0, title="本地曲库", author=root, plays=0, hue=150, tag="本地")
+        dirs = self._library_dirs()
+        tracks: list[Track] = []
+        seen: set[str] = set()
+        for root in dirs:
+            for track in scan(root):
+                if track.path not in seen:
+                    seen.add(track.path)
+                    tracks.append(track)
+        playlist = Playlist(id=0, title="本地曲库", author=f"{len(dirs)} 个目录",
+                            plays=0, hue=150, tag="本地")
         self.playlist_page.set_playlist(
             playlist, tracks, title="本地曲库",
-            subtitle=f"{len(tracks)} 个文件 · {root}", chip="本地")
+            subtitle=f"{len(tracks)} 个文件 · {' / '.join(dirs[:2])}"
+                     + (" …" if len(dirs) > 2 else ""), chip="本地")
         self.playlist_page.table.set_allow_file_delete(True)   # 本地曲库才允许删文件
-        self.playlist_page._is_local = True
+        self.playlist_page.set_local_mode(True)
         self._show(P_PLAYLIST)
         if not tracks:
             self.banner.show_message("这个目录里没有音频文件，去设置里换个下载目录",
                                      level="info", timeout_ms=5000)
+
+    def _add_library_dir(self) -> None:
+        path = QFileDialog.getExistingDirectory(self, "选择要扫描的文件夹",
+                                                self._settings.download_dir)
+        if not path:
+            return
+        dirs = self._library_dirs()
+        if path in dirs:
+            self.banner.show_message("这个目录已经在曲库里了", level="info", timeout_ms=3000)
+            return
+        dirs.append(path)
+        self._settings.set("library_dirs", dirs)
+        self._show_local_library()
+        self.banner.show_message(f"已添加目录，共 {len(self.playlist_page._tracks)} 首",
+                                 level="success", timeout_ms=4000)
+
+    def _manage_library_dirs(self) -> None:
+        dirs = self._library_dirs()
+        menu = QMenu(self)
+        menu.addAction("当前扫描目录").setEnabled(False)
+        download = str(self._settings.download_dir)
+        for path in dirs:
+            label = path if path != download else f"{path}（下载目录）"
+            action = menu.addAction(f"移除  {label}")
+            action.setEnabled(path != download)
+            action.triggered.connect(lambda _=False, p=path: self._remove_library_dir(p))
+        menu.addSeparator()
+        menu.addAction("添加目录…", self._add_library_dir)
+        menu.exec(self.playlist_page.btn_manage_dir.mapToGlobal(
+            self.playlist_page.btn_manage_dir.rect().bottomLeft()))
+
+    def _remove_library_dir(self, path: str) -> None:
+        dirs = [d for d in self._library_dirs() if d != path]
+        self._settings.set("library_dirs", dirs)
+        self._show_local_library()
+        self.banner.show_message("已移除该目录", level="info", timeout_ms=3000)
 
     def _delete_local_files(self, tracks: list[Track]) -> None:
         """本地曲库：把选中的文件移到回收站，并刷新列表。"""
@@ -951,6 +1012,76 @@ class MainWindow(QWidget):
     def _on_queue_append(self, track: Track) -> None:
         self.player.queue.append(track)
         self.banner.show_message(f"已加到队列末尾：{track.title}", level="info", timeout_ms=3000)
+
+    # ---------------- 播放列表 ----------------
+    def _on_queue_clear(self) -> None:
+        if not self.player.queue:
+            return
+        ok, _ = confirm(self, "清空播放列表", "清空后当前播放也会停止。",
+                        level="warning", ok_text="清空")
+        if not ok:
+            return
+        self.player.set_queue([], 0)
+        self.banner.show_message("播放列表已清空", level="info", timeout_ms=3000)
+
+    def _on_queue_remove(self, index: int) -> None:
+        queue = list(self.player.queue)
+        if not (0 <= index < len(queue)):
+            return
+        removed_current = index == self.player.index
+        queue.pop(index)
+        if not queue:
+            self.player.set_queue([], 0)
+            return
+        new_index = self.player.index - (1 if index < self.player.index else 0)
+        new_index = max(0, min(new_index, len(queue) - 1))
+        self.player.set_queue(queue, new_index, autoplay=removed_current)
+
+    def _on_queue_collect(self) -> None:
+        tracks = list(self.player.queue)
+        if not tracks:
+            return
+        if not self._logged_in:
+            self._show_error("登录后才能收藏")
+            return
+        self._on_like_many(tracks)
+        self.banner.show_message(f"正在收藏 {len(tracks)} 首到「我喜欢的音乐」",
+                                 level="info", timeout_ms=3000)
+
+    # ---------------- 播放列表 ----------------
+    def _on_queue_clear(self) -> None:
+        if not self.player.queue:
+            return
+        ok, _ = confirm(self, "清空播放列表", "清空后当前播放也会停止。",
+                        level="warning", ok_text="清空")
+        if not ok:
+            return
+        self.player.set_queue([], 0)
+        self.banner.show_message("播放列表已清空", level="info", timeout_ms=3000)
+
+    def _on_queue_remove(self, index: int) -> None:
+        queue = list(self.player.queue)
+        if not (0 <= index < len(queue)):
+            return
+        removed_current = index == self.player.index
+        queue.pop(index)
+        if not queue:
+            self.player.set_queue([], 0)
+            return
+        new_index = self.player.index - (1 if index < self.player.index else 0)
+        new_index = max(0, min(new_index, len(queue) - 1))
+        self.player.set_queue(queue, new_index, autoplay=removed_current)
+
+    def _on_queue_collect(self) -> None:
+        tracks = list(self.player.queue)
+        if not tracks:
+            return
+        if not self._logged_in:
+            self._show_error("登录后才能收藏")
+            return
+        self._on_like_many(tracks)
+        self.banner.show_message(f"正在收藏 {len(tracks)} 首到「我喜欢的音乐」",
+                                 level="info", timeout_ms=3000)
 
     def _on_quality_changed(self, value: str) -> None:
         if value == self._settings.get("play_quality"):
@@ -1272,17 +1403,21 @@ class MainWindow(QWidget):
             return
 
         self._playing_fullscreen = True
+        self.wasMaximized = self.isMaximized()
         self._fs_state = (self.sidebar.isVisible(), self.topbar.isVisible(),
                           self.player_bar.isVisible())
         self.sidebar.hide()
         self.topbar.hide()
         self.player_bar.hide()
         self._show(P_NOW)
-        self.showFullScreen()
+        self.showMaximized()          # 窗口铺满，但仍保留窗口边框/任务栏
 
     def _exit_playing_fullscreen(self) -> None:
         self._playing_fullscreen = False
-        self.showNormal()
+        if self.wasMaximized:
+            self.showMaximized()
+        else:
+            self.showNormal()
         sidebar, topbar, bar = getattr(self, "_fs_state", (True, True, True))
         self.sidebar.setVisible(sidebar)
         self.topbar.setVisible(topbar)
