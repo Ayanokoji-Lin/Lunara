@@ -65,3 +65,14 @@ def parse_lrc(text: str) -> list[tuple[int, str]]:
 def parse_lyric_response(response: LyricResponse) -> list[tuple[int, str]]:
     """接口响应 → 可直接喂给 ``LyricView`` 的列表。"""
     return parse_lrc(response.text)
+
+
+def parse_lyric_with_translation(
+    response: LyricResponse,
+) -> list[tuple[int, str, str]]:
+    """原文 + 翻译：``(毫秒, 原文, 译文)``，没有翻译的句子译文为空串。"""
+    main = parse_lrc(response.text)
+    if not main:
+        return []
+    translated = {ms: text for ms, text in parse_lrc(response.translation)}
+    return [(ms, text, translated.get(ms, "")) for ms, text in main]

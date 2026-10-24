@@ -80,7 +80,7 @@ from .services.catalog import (
     to_track_from_newsong,
     to_track_list,
 )
-from .services.lyrics import parse_lyric_response
+from .services.lyrics import parse_lyric_with_translation
 from .services.qt_bridge import QtAsyncBridge
 from .services.session import SessionService, SessionState
 from .widgets.notice import InlineBanner
@@ -461,7 +461,7 @@ class MainWindow(QWidget):
 
     async def _fetch_lyric(self, song_id: int) -> tuple[int, list[tuple[int, str]]]:
         response = await get_lyric(get_client(), song_id)
-        return song_id, parse_lyric_response(response)
+        return song_id, parse_lyric_with_translation(response)
 
     def _apply_lyric(self, data: tuple[int, list[tuple[int, str]]]) -> None:
         song_id, lines = data
@@ -824,6 +824,8 @@ class MainWindow(QWidget):
         """上次退出时的音量、倍速、队列（不开播）。"""
         self.player.set_volume(int(self._settings.get("volume", self.player.volume)))
         self.player.set_rate(float(self._settings.get("playback_rate", 1.0)))
+        self.now_playing.set_lyric_offset(int(self._settings.get("lyric_offset", 0)))
+        self.now_playing.set_lyric_offset(int(self._settings.get("lyric_offset", 0)))
         self._apply_sleep(int(self._settings.get("sleep_minutes", 0)))
 
         tracks, index = queue_store.load()
@@ -1002,6 +1004,8 @@ class MainWindow(QWidget):
         """上次退出时的音量、倍速、队列（不开播）。"""
         self.player.set_volume(int(self._settings.get("volume", self.player.volume)))
         self.player.set_rate(float(self._settings.get("playback_rate", 1.0)))
+        self.now_playing.set_lyric_offset(int(self._settings.get("lyric_offset", 0)))
+        self.now_playing.set_lyric_offset(int(self._settings.get("lyric_offset", 0)))
         self._apply_sleep(int(self._settings.get("sleep_minutes", 0)))
 
         tracks, index = queue_store.load()
@@ -1116,6 +1120,10 @@ class MainWindow(QWidget):
             self.player.set_fade(bool(value))
         elif key == "playback_rate":
             self.player.set_rate(float(value))
+        elif key == "lyric_offset":
+            self.now_playing.set_lyric_offset(int(value))
+        elif key == "lyric_offset":
+            self.now_playing.set_lyric_offset(int(value))
         elif key == "sleep_minutes":
             self._apply_sleep(int(value))
         elif key == "close_to_tray":
@@ -1128,6 +1136,10 @@ class MainWindow(QWidget):
             self.player.set_fade(bool(value))
         elif key == "playback_rate":
             self.player.set_rate(float(value))
+        elif key == "lyric_offset":
+            self.now_playing.set_lyric_offset(int(value))
+        elif key == "lyric_offset":
+            self.now_playing.set_lyric_offset(int(value))
         elif key == "sleep_minutes":
             self._apply_sleep(int(value))
         elif key == "close_to_tray":
@@ -1142,6 +1154,10 @@ class MainWindow(QWidget):
             self.player.set_fade(bool(value))
         elif key == "playback_rate":
             self.player.set_rate(float(value))
+        elif key == "lyric_offset":
+            self.now_playing.set_lyric_offset(int(value))
+        elif key == "lyric_offset":
+            self.now_playing.set_lyric_offset(int(value))
         elif key == "sleep_minutes":
             self._apply_sleep(int(value))
         elif key == "close_to_tray":
@@ -1154,6 +1170,10 @@ class MainWindow(QWidget):
             self.player.set_fade(bool(value))
         elif key == "playback_rate":
             self.player.set_rate(float(value))
+        elif key == "lyric_offset":
+            self.now_playing.set_lyric_offset(int(value))
+        elif key == "lyric_offset":
+            self.now_playing.set_lyric_offset(int(value))
         elif key == "sleep_minutes":
             self._apply_sleep(int(value))
         elif key == "close_to_tray":

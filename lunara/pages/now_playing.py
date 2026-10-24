@@ -183,7 +183,11 @@ class NowPlayingPage(QWidget):
             self.vinyl.start()
 
     # ---------------- 歌词 ----------------
-    def set_lyrics(self, lines: list[tuple[int, str]]) -> None:
+    def set_lyric_offset(self, ms: int) -> None:
+        for lv in (self.lyric1, self.lyric2):
+            lv.set_offset(ms)
+
+    def set_lyrics(self, lines: list[tuple]) -> None:
         """注入真实歌词（LRC 解析结果）。
 
         空列表视为「没取到」，保留当前歌词（默认是演示歌词），避免切歌时闪成空白。
