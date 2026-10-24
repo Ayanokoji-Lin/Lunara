@@ -33,6 +33,8 @@ python main.py
 - 设置页：左分类导航 + 胶囊开关 + 下拉框 + 账号页（登录 / 退出 / 会员态）
 - 侧栏「我的歌单」：登录后换成真实歌单分组，「我喜欢的音乐」直达对应歌单
 - 播放栏：旋转小唱片、进度条点击跳转、音量、播放模式、播放队列
+- 真实播放：`QMediaPlayer` + 直链解析（官方 → GD 降级），进度/时长/seek 全走真实音频
+- 真实播放：`QMediaPlayer` + 直链解析（官方 → GD 降级），进度/时长/seek 全走真实音频
 
 ## 数据层
 
@@ -92,6 +94,10 @@ LUNARA_LIVE=1 .venv/Scripts/python.exe -m pytest tests/test_live.py   # 真上�
 .venv/Scripts/python.exe tools/verify_ui_live.py                      # 首页/歌单端到端 + 截图
 .venv/Scripts/python.exe tools/smoke_login.py                         # 登录窗口能否加载
 .venv/Scripts/python.exe tools/verify_account_ui.py                   # 登录态：我的歌单 + 喜欢（需先登录）
+.venv/Scripts/python.exe tools/verify_download.py                     # 真实下载（会写文件）
+.venv/Scripts/python.exe tools/verify_playback.py                     # 真实播放（会出声）
+.venv/Scripts/python.exe tools/verify_download.py                     # 真实下载（会写文件）
+.venv/Scripts/python.exe tools/verify_playback.py                     # 真实播放（会出声）
 ```
 
 分层、错误码、已验证的上游事实见 `docs/API-PLAN.md`，
@@ -128,14 +134,29 @@ UI 接真数据的排期与进度见 `docs/UI-INTEGRATION-PLAN.md`。
 - 暂停、退出应用、断网都会保留 `.part` 文件，恢复后从断点继续。
 - 删除任务只删任务与 `.part`，已经下完的文件不会被动。
 
+## 播放说明
+
+- 点播放时先解析直链，再交给 `QMediaPlayer`；解析是异步的，切歌后迟到的结果会被丢弃
+  （内部用单调递增的 `seq` 判断），所以连续快速切歌不会串台。
+- 进度条与歌词都用**真实时长**，和接口给的 `duration` 差几秒是正常的（编码差异）。
+- 未登录/非会员遇到 VIP 歌：官方只给 45 秒，会自动转 GD 拿完整文件；
+  两边都拿不到时顶部提示「只提供 45 秒试听片段」，不会假装在放整首。
+
+## 播放说明
+
+- 点播放时先解析直链，再交给 `QMediaPlayer`；解析是异步的，切歌后迟到的结果会被丢弃
+  （内部用单调递增的 `seq` 判断），所以连续快速切歌不会串台。
+- 进度条与歌词都用**真实时长**，和接口给的 `duration` 差几秒是正常的（编码差异）。
+- 未登录/非会员遇到 VIP 歌：官方只给 45 秒，会自动转 GD 拿完整文件；
+  两边都拿不到时顶部提示「只提供 45 秒试听片段」，不会假装在放整首。
+
 ## 说明
 
-还剩一块是演示态：
+播放和下载都已经是真的了。音频走 `QMediaPlayer`，直链由 `services/player_url`
+解析（官方拿不到完整文件时降级 GD Studio）；没有音频设备或播演示曲目时自动退回
+虚拟时钟，界面表现一致。
 
-- **音频**：`lunara/core/player.py` 仍是「虚拟时钟」，换成 `QMediaPlayer` 后
-  `toggle/seek/positionChanged` 对外信号不变，UI 侧零改动。
-
-下载已经是真的了：任务表在 `%APPDATA%/Lunara/tasks.db`，文件落到设置里的下载目录
+下载：任务表在 `%APPDATA%/Lunara/tasks.db`，文件落到设置里的下载目录
 （默认 `D://Music//Lunara`），暂停/退出后重开自动续传。设置 → 下载可以改目录与并发数。
 
 启动方式除了 `python main.py`，桌面上还有一个 `Lunara.bat`（用系统 Python，

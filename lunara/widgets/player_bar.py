@@ -207,7 +207,7 @@ class PlayerBar(QFrame):
         track = self.player.current
         if track is None:
             return
-        self.player.seek(int(track.duration_ms * value / self.seek.maximum()))
+        self.player.seek(int(self.player.duration_ms * value / self.seek.maximum()))
 
     def _sync_like(self) -> None:
         track = self.player.current

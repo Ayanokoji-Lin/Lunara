@@ -33,7 +33,7 @@
 | 搜索 | 歌单 | 本地过滤 | `cloudsearch` type=1000 | ✅ 已实测 |
 | 播放页 | 歌词 | `LYRICS` 固定 | `/api/song/lyric` | ✅ 已实测（LRC 文本） |
 | 播放页 | 喜欢 | 内存 set | `/api/like` | ⬜ 未接（登录已就绪，写接口待实测） |
-| 播放栏 | 播放/进度/音量 | 虚拟时钟 | `player_url` 服务 + QMediaPlayer | ✅ 直链已就绪 |
+| 播放栏 | 播放/进度/音量 | `QMediaPlayer`（真实音频） | `player_url` + 直链注入 | ✅ 已实测 |
 | 侧栏 | 我喜欢的音乐 | 真实歌单（456 首） | 走 `specialType=5` 歌单，不用 `/api/song/like` | ✅ 已实测 |
 | 侧栏 | 我的歌单 | 真实分组（创建 / 收藏） | `/api/user/playlist` | ✅ 已实测 |
 | 下载页 | 任务/进度/暂停 | 真实下载（SQLite 任务表） | `player_url` + HTTP 流式 + Range | ✅ 已实测 |
@@ -56,6 +56,8 @@
 | P5a 登录 | ✅ 完成 | 内嵌浏览器登录 → 抓 Cookie → DPAPI 加密落盘 |
 | P5b 我的音乐 | ✅ 完成 | 侧栏 6 个真实歌单；「我喜欢的音乐」456 首 |
 | P6 下载 | ✅ 完成 | 真实文件落盘、暂停续传、重启恢复、并发上限 |
+| P6.5 音频内核 | ✅ 完成 | 真实出声、真实时长、seek、切歌竞态 |
+| P6.5 音频内核 | ✅ 完成 | 真实出声、真实时长、seek、切歌竞态 |
 | P7 收尾 | ⬜ | 统一错误提示 + 音质偏好接线 + 缓存预热 |
 
 ### P0 · 适配层与模块（无 UI 改动）✅
@@ -210,6 +212,54 @@ DeferredDelete 前仍留在视口里——换歌词瞬间会看到「两列歌�
 **验收**：两首真实歌曲下载完成（36.1 MB / 37.6 MB FLAC，文件头校验通过），
 截图 `shots/20_download_live.png`；暂停/续传/416/403/5xx/并发上限等 10 个场景有单测覆盖。
 
+### P6.5 · 音频内核替换 ✅
+
+**做法：双引擎，对外契约不变**
+- `Player(engine="auto"|"media"|"clock")`：能建 `QMediaPlayer` 就用 media，
+  否则退时钟（无音频设备、测试、演示曲目）。
+- `Track.remote` 区分线上曲目与 `data.py` 的演示曲目：演示曲目永远走时钟，不联网。
+- 6 个信号 + 8 个方法签名一个没改，页面零改动（只修了 `PlayerBar._on_seek` 用真实时长）。
+
+**异步直链怎么接**
+```
+play() → urlRequested(seq, track) → MainWindow 用 QtAsyncBridge 调 PlayerUrlService
+       → set_source(seq, url, trial) 或 resolve_failed(seq, msg)
+```
+`seq` 单调递增，`set_source` 里比对，迟到结果直接丢——连续切歌不串台。
+
+**踩到的坑**
+- `_load_current` 里又请求了一次直链，和 `play()` 重复 → 改成只清音源，请求统一由 `play()` 触发。
+- `seek` 原来用 `track.duration_ms` 钳制，真实时长比接口值长/短时会跳错位置 → 统一走 `Player.duration_ms`。
+- `QMediaPlayer` 首帧要缓冲，连切后 2 秒内 `position` 还是 0 属正常，别误判成卡住。
+
+**验收**：热歌榜首曲真实播放，时长 320.4s（接口 320s），3 秒后位置 1228ms，
+seek 到 160222ms 实际落在 160654ms，暂停生效；截图 `shots/21_playing_live.png`。
+另有 15 项内核逻辑单测（时钟推进、单曲循环、连切竞态、试听标记）。
+
+### P6.5 · 音频内核替换 ✅
+
+**做法：双引擎，对外契约不变**
+- `Player(engine="auto"|"media"|"clock")`：能建 `QMediaPlayer` 就用 media，
+  否则退时钟（无音频设备、测试、演示曲目）。
+- `Track.remote` 区分线上曲目与 `data.py` 的演示曲目：演示曲目永远走时钟，不联网。
+- 6 个信号 + 8 个方法签名一个没改，页面零改动（只修了 `PlayerBar._on_seek` 用真实时长）。
+
+**异步直链怎么接**
+```
+play() → urlRequested(seq, track) → MainWindow 用 QtAsyncBridge 调 PlayerUrlService
+       → set_source(seq, url, trial) 或 resolve_failed(seq, msg)
+```
+`seq` 单调递增，`set_source` 里比对，迟到结果直接丢——连续切歌不串台。
+
+**踩到的坑**
+- `_load_current` 里又请求了一次直链，和 `play()` 重复 → 改成只清音源，请求统一由 `play()` 触发。
+- `seek` 原来用 `track.duration_ms` 钳制，真实时长比接口值长/短时会跳错位置 → 统一走 `Player.duration_ms`。
+- `QMediaPlayer` 首帧要缓冲，连切后 2 秒内 `position` 还是 0 属正常，别误判成卡住。
+
+**验收**：热歌榜首曲真实播放，时长 320.4s（接口 320s），3 秒后位置 1228ms，
+seek 到 160222ms 实际落在 160654ms，暂停生效；截图 `shots/21_playing_live.png`。
+另有 15 项内核逻辑单测（时钟推进、单曲循环、连切竞态、试听标记）。
+
 ### P7 · 收尾（1 轮）
 
 - **音质偏好接线**：设置页那 4 档下拉 → `QualityLevel`，播放时传给 `PlayerUrlService`。
@@ -266,6 +316,14 @@ P5b 改动 widgets/sidebar.py（+set_my_playlists）  main_window.py（登录后
      新增 api/models/user.py（UserPlaylist）+ modules/user.get_user_playlists     ✅
      改动 services/catalog.py（split_user_playlists）  api/models/playlist.py（容忍 null）✅
      测试 tests/test_catalog.py 补 3 项  tools/verify_account_ui.py                 ✅
+P6.5 改动 core/player.py（双引擎 + 直链注入 + duration_ms）  data.py（Track.remote）  ✅
+     改动 services/catalog.py（标记 remote）  services/download/store.py（同上）        ✅
+     改动 widgets/player_bar.py（seek 用真实时长）  main_window.py（解析注入 + 错误条） ✅
+     测试 tests/test_player_logic.py（15 项）  tools/verify_playback.py                  ✅
+P6.5 改动 core/player.py（双引擎 + 直链注入 + duration_ms）  data.py（Track.remote）  ✅
+     改动 services/catalog.py（标记 remote）  services/download/store.py（同上）        ✅
+     改动 widgets/player_bar.py（seek 用真实时长）  main_window.py（解析注入 + 错误条） ✅
+     测试 tests/test_player_logic.py（15 项）  tools/verify_playback.py                  ✅
 P6 新增 services/paths.py  services/settings_store.py  services/error_text.py       ✅
    新增 services/download/{naming,store,service,notice}.py                         ✅
    新增 widgets/notice.py（InlineBanner）  NOTICE.txt                              ✅
@@ -305,7 +363,5 @@ P7 改动  pages/settings.py（音质下拉接 QualityLevel）  main_window.py�
 
 ## 7. 建议的执行顺序
 
-音频替换（下一轮）→ 收尾。
-P5、P6 都已完成，「会员态 + 直链 + 队列 + 下载」全是真数据，现在换播放内核的风险最低。
-
-如果只有一轮时间：做音频内核替换，那是最后一块演示态。
+只剩 P7 收尾（音质偏好已接线、错误条已可用、登录态已共享，剩下首页失败重试与几处错误接线）。
+P5、P6、P6.5 都已完成，界面上的每一块都是真数据了。

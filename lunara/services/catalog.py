@@ -60,6 +60,7 @@ def to_track(song: Song) -> Track:
         duration=song.duration_seconds,
         hue=hue_for(song.id),
         cover_url=song.album.pic_url if song.album else "",
+        remote=True,
     )
 
 
@@ -76,6 +77,7 @@ def to_track_from_newsong(entry: NewSongEntry) -> Track | None:
         duration=song.duration_seconds,
         hue=hue_for(song.id),
         cover_url=song.album.pic_url if song.album else "",
+        remote=True,
     )
 
 

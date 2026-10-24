@@ -188,6 +188,7 @@ def _row_to_task(row: sqlite3.Row) -> DownloadTask:
         duration=int(row["duration"]),
         hue=int(row["hue"]),
         cover_url=row["cover_url"],
+        remote=True,
     )
     return DownloadTask(
         track=track,

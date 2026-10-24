@@ -42,8 +42,12 @@ from .services.account import AccountStore, apply_cookies, forget_cookies
 from .services.async_bridge import run_sync, shutdown as shutdown_bridge
 from .services.covers import covers
 from .services.download.service import DownloadService
+from .services.error_text import error_text
+from .services.error_text import error_text
 from .services.download.store import DownloadStore
 from .services.player_url.service import PlayerUrlService
+from .services.player_url.types import ResolveOutcome
+from .services.player_url.types import ResolveOutcome
 from .services.settings_store import SettingsStore
 from .services.catalog import (
     SearchPayload,
@@ -180,6 +184,12 @@ class MainWindow(QWidget):
         self.topbar.backClicked.connect(self.go_back)
         self.topbar.forwardClicked.connect(self.go_forward)
         self.player_bar.openNowPlaying.connect(self.open_now_playing)
+        self.player.urlRequested.connect(self._on_url_requested)
+        self.player.errorOccurred.connect(self._on_player_error)
+        self.player.trialModeChanged.connect(self._on_trial_changed)
+        self.player.urlRequested.connect(self._on_url_requested)
+        self.player.errorOccurred.connect(self._on_player_error)
+        self.player.trialModeChanged.connect(self._on_trial_changed)
         self.playlist_page.downloadRequested.connect(self._enqueue_downloads)
         self.download_page.finished.connect(self._on_download_finished)
         self._settings.changed.connect(self._on_setting_changed)
@@ -326,6 +336,62 @@ class MainWindow(QWidget):
     def _on_lyric_error(self, error: BaseException) -> None:
         api_log.get_logger().warning("歌词未加载，沿用演示歌词：%s", error)
 
+    # ================= 播放 =================
+    def _on_url_requested(self, seq: int, track: Track) -> None:
+        self._bridge.submit(
+            self._resolve_track(track),
+            on_success=lambda outcome: self._apply_resolution(seq, outcome),
+            on_error=lambda exc: self.player.resolve_failed(seq, error_text(exc)),
+        )
+
+    async def _resolve_track(self, track: Track) -> ResolveOutcome:
+        return await self._url_service.resolve(track.id, self._settings.play_quality)
+
+    def _apply_resolution(self, seq: int, outcome: ResolveOutcome) -> None:
+        if outcome.available and outcome.result is not None:
+            self.player.set_source(seq, outcome.result.url, outcome.result.trial)
+            return
+        if outcome.fallback is not None:
+            self.player.set_source(seq, outcome.fallback.url, True)
+            return
+        self.player.resolve_failed(seq, error_text(outcome.error, "这首歌暂时无法播放"))
+
+    def _on_player_error(self, message: str) -> None:
+        self.banner.show_message(message, level="error", timeout_ms=6000)
+
+    def _on_trial_changed(self, trial: bool) -> None:
+        if trial:
+            self.banner.show_message("这首歌只提供 45 秒试听片段", level="warning",
+                                     timeout_ms=5000)
+
+    # ================= 播放 =================
+    def _on_url_requested(self, seq: int, track: Track) -> None:
+        self._bridge.submit(
+            self._resolve_track(track),
+            on_success=lambda outcome: self._apply_resolution(seq, outcome),
+            on_error=lambda exc: self.player.resolve_failed(seq, error_text(exc)),
+        )
+
+    async def _resolve_track(self, track: Track) -> ResolveOutcome:
+        return await self._url_service.resolve(track.id, self._settings.play_quality)
+
+    def _apply_resolution(self, seq: int, outcome: ResolveOutcome) -> None:
+        if outcome.available and outcome.result is not None:
+            self.player.set_source(seq, outcome.result.url, outcome.result.trial)
+            return
+        if outcome.fallback is not None:
+            self.player.set_source(seq, outcome.fallback.url, True)
+            return
+        self.player.resolve_failed(seq, error_text(outcome.error, "这首歌暂时无法播放"))
+
+    def _on_player_error(self, message: str) -> None:
+        self.banner.show_message(message, level="error", timeout_ms=6000)
+
+    def _on_trial_changed(self, trial: bool) -> None:
+        if trial:
+            self.banner.show_message("这首歌只提供 45 秒试听片段", level="warning",
+                                     timeout_ms=5000)
+
     # ================= 下载 =================
     def _enqueue_downloads(self, tracks: list[Track]) -> None:
         if not tracks:
@@ -440,6 +506,10 @@ class MainWindow(QWidget):
         await covers().aclose()
 
     def closeEvent(self, event) -> None:
+        try:
+            self.player.shutdown()
+        except Exception:  # noqa: BLE001
+            pass
         try:
             self._downloads.shutdown()
         except Exception:  # noqa: BLE001 - 退出路径不该再抛错

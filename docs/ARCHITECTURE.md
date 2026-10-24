@@ -16,7 +16,7 @@ Lunara/
 │  ├─ assets.py             程序化「月牙」封面（空态）、圆角/裁切、离线模糊
 │  ├─ data.py               Track / Playlist 数据类 + 演示曲库 + 歌词
 │  ├─ main_window.py        无边框主窗口、四模块装配、导航、异步数据接线
-│  ├─ core/player.py        播放内核（虚拟时钟，可平滑替换为 QMediaPlayer）
+│  ├─ core/player.py        播放内核（QMediaPlayer / 虚拟时钟双引擎）
 │  ├─ api/                  eapi 组包、异步请求层、接口模块与 pydantic 模型
 │  ├─ services/             直链决策、登录态、封面、歌词解析、下载、设置、模型适配、异步桥
 │  ├─ store/                TTLCache、AsyncSingleFlight
@@ -55,7 +55,7 @@ MainWindow(QWidget, 无边框)
 
 | 类 | 只做一件事 | 关键接口 |
 |---|---|---|
-| `Player` | 队列、进度、模式、喜欢；不碰任何 UI | `set_queue / play_track / toggle / seek / cycle_mode` |
+| `Player` | 队列、进度、模式、喜欢；双引擎但对外一致，不碰任何 UI | `set_queue / play_track / toggle / seek / set_source / cycle_mode` |
 | `MainWindow` | 装配 + 导航路由 + 窗口行为 | `navigate(key) / open_playlist / _apply_window_state` |
 | `Sidebar` | 导航条目与选中态 | `navigate(str)`、`select(key)` |
 | `TopBar` | 搜索输入、窗口按钮、拖动 | `searchSubmitted / minimizeRequested …` |
@@ -301,11 +301,14 @@ def paintEvent(self, event):
 
 ## 8. 现状与下一步
 
-已完成：真实数据（首页 / 歌单 / 搜索 / 歌词 / 封面）、账号登录与「我的歌单」。
-数据层的设计与验证记录见 `docs/API-PLAN.md`，接线排期见 `docs/UI-INTEGRATION-PLAN.md`。
+已完成：真实数据（首页 / 歌单 / 搜索 / 歌词 / 封面）、账号登录与「我的歌单」、
+真实下载、真实播放。数据层的设计与验证记录见 `docs/API-PLAN.md`，
+接线排期见 `docs/UI-INTEGRATION-PLAN.md`。
 
-- **接入真实音频**：`Player._tick` 换成 `QMediaPlayer.positionChanged`，`toggle/seek` 转发到播放器；
-  `Player` 的对外信号保持不变，UI 零改动。直链已由 `services/player_url` 备好。
+**播放内核的双引擎**：`Player(engine="auto")` 能建 `QMediaPlayer` 就用真实音频，
+否则退虚拟时钟；演示曲目（`Track.remote=False`）永远走时钟。直链解析是异步的，
+`Player` 只发 `urlRequested(seq, track)`，上层解析完回调 `set_source(seq, url, trial)`，
+`seq` 不匹配的迟到结果直接丢弃。
 - **歌手页 / 专辑页**：搜索结果里这两类卡片现在只是占位点击，详情接口还没实测。
 - **曲库落库**：`data.py` 换成 SQLite + `mutagen` 读标签，扫描本地目录。
 - **亮色主题**：`LIGHT` 已备好，`qss(LIGHT)` + `repolish` 即可切换，但 `assets` 里的深空渐变需要按主题调整亮度。

@@ -18,6 +18,7 @@ class Track:
     hue: int               # 程序化封面的色相
     liked: bool = False
     cover_url: str = ""    # 真实封面；空或加载失败时回落到月牙空态
+    remote: bool = False   # True = 线上曲目（播放要先解析直链）；演示曲目走虚拟时钟
 
     @property
     def seed(self) -> int:
