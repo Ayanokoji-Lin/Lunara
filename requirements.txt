@@ -3,3 +3,6 @@ qtawesome>=1.3
 httpx>=0.28
 pydantic>=2.9
 cryptography>=43
+
+# 登录窗口（内嵌 Chromium，约 130MB）；缺了登录会退化成提示页，其余功能不受影响
+PyQt6-WebEngine>=6.6

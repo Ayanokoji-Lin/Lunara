@@ -1,7 +1,7 @@
 """Lunara · 设置页（左分类导航 + QStackedWidget）"""
 from __future__ import annotations
 
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtWidgets import (
     QComboBox,
     QFrame,
@@ -19,10 +19,13 @@ from ..widgets.sidebar import LogoMark
 from ..widgets.toggle import Switch
 from .base import BasePage
 
-NAV = ("播放", "音质", "下载", "关于")
+NAV = ("播放", "音质", "下载", "账号", "关于")
 
 
 class SettingsPage(BasePage):
+    loginRequested = pyqtSignal()
+    logoutRequested = pyqtSignal()
+
     def __init__(self, parent: QWidget | None = None):
         super().__init__(parent=parent)
         self.add_page_header("设置", "让 Lunara 更贴合你的耳朵")
@@ -55,6 +58,7 @@ class SettingsPage(BasePage):
         self.stack.addWidget(self._build_play())
         self.stack.addWidget(self._build_quality())
         self.stack.addWidget(self._build_download())
+        self.stack.addWidget(self._build_account())
         self.stack.addWidget(self._build_about())
 
         h.addWidget(nav, 0, Qt.AlignmentFlag.AlignTop)
@@ -145,6 +149,50 @@ class SettingsPage(BasePage):
             ("同时下载数量", "数量越多越占用带宽", self._combo(["2", "3", "5", "8"], 1)),
             ("下载完成后提示", "在右下角弹出通知", Switch(True)),
         ])
+
+    def _build_account(self) -> QWidget:
+        self.lbl_account = QLabel("未登录 · 只能浏览公开内容")
+        self.lbl_account.setStyleSheet(
+            f"color: {THEME['text_sub']}; font-size: 11px;")
+
+        self.btn_login = QPushButton("  登录")
+        self.btn_login.setObjectName("PrimaryPill")
+        self.btn_login.setFixedHeight(30)
+        self.btn_login.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_login.clicked.connect(self.loginRequested)
+
+        self.btn_logout = QPushButton("  退出登录")
+        self.btn_logout.setObjectName("GhostPill")
+        self.btn_logout.setFixedHeight(30)
+        self.btn_logout.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_logout.setVisible(False)
+        self.btn_logout.clicked.connect(self.logoutRequested)
+
+        box = QWidget()
+        bh = QHBoxLayout(box)
+        bh.setContentsMargins(0, 0, 0, 0)
+        bh.setSpacing(8)
+        bh.addWidget(self.lbl_account)
+        bh.addWidget(self.btn_login)
+        bh.addWidget(self.btn_logout)
+
+        local = QLabel("系统加密（DPAPI）")
+        local.setStyleSheet(f"color: {THEME['text_dim']}; font-size: 11px;")
+
+        return self._panel([
+            ("账号", "登录后可同步我的歌单、喜欢的音乐与会员曲目", box),
+            ("登录信息", "Cookie 只保存在本机，不上传任何服务器", local),
+        ])
+
+    def set_account(self, *, logged_in: bool, nickname: str = "", vip: bool = False) -> None:
+        """由主窗口在登录态变化时调用。"""
+        if logged_in:
+            name = nickname or "已登录"
+            self.lbl_account.setText(f"{name}{'（会员）' if vip else ''}")
+        else:
+            self.lbl_account.setText("未登录 · 只能浏览公开内容")
+        self.btn_login.setVisible(not logged_in)
+        self.btn_logout.setVisible(logged_in)
 
     def _build_about(self) -> QWidget:
         panel = QFrame()

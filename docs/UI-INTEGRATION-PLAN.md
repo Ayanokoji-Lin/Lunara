@@ -53,7 +53,8 @@
 | P3 搜索四类 | ✅ 完成 | 四个 Tab 全部真实结果（30 单曲 / 20 歌手 / 20 专辑 / 20 歌单） |
 | P3.5 真实封面 | ✅ 完成 | 首页/歌单/搜索/播放页都是真图，拿不到时回落月牙空态 |
 | P4 歌词 | ✅ 完成（音频待单独一轮） | 热歌榜首曲 101 行真实歌词，时间轴与虚拟时钟对齐 |
-| P5 我的音乐 | ⬜ | 扫码登录 → 侧栏真实歌单 |
+| P5a 登录 | ✅ 完成 | 内嵌浏览器登录 → 抓 Cookie → DPAPI 加密落盘 |
+| P5b 我的音乐 | ⬜ 下一轮 | 侧栏真实歌单 / 喜欢的音乐（需先登录一次） |
 | P6 下载 | ⬜ | 真实文件落盘 + 断点续传 |
 | P7 收尾 | ⬜ | `README-api.md` |
 
@@ -139,33 +140,44 @@ DeferredDelete 前仍留在视口里——换歌词瞬间会看到「两列歌�
 **验收**：热歌榜首曲《我不难过》拉到 101 行真实歌词（`[0s] 作词 : 杨明学` …），
 截图 `shots/16_now_playing_live.png`。
 
-### P5 · 我的音乐（需登录，1 轮）
+### P5a · 登录 ✅
 
-**登录方案（已定，2026-10-24 调整）**：**不碰登录接口，直接开浏览器让用户自己登，然后取 Cookie 加密存本地。**
+**登录方案（已定）**：**不碰登录接口，直接开浏览器让用户自己登，然后取 Cookie 加密存本地。**
 
-```
-点「登录」→ 内嵌 QWebEngineView 打开 music.163.com 登录页
-        → 监听 QWebEngineProfile.cookieStore().cookieAdded
-        → 过滤 domain=.music.163.com，收集 MUSIC_U / __csrf / NMTID
-        → 出现 MUSIC_U 即视为成功 → 关闭窗口
-        → AES-256-GCM 加密写 %APPDATA%/Lunara/session.enc
-        → CookieProvider 注入 + SessionService.invalidate()
-```
+**落地**
+- `services/login_browser.py`：`QWebEngineView` 打开 `music.163.com/#/login`，
+  监听 `cookieStore().cookieAdded`，只收 `.music.163.com` 域，出现 `MUSIC_U` 即成功并自动关闭。
+- `services/secret_store.py`：Windows 优先 **DPAPI**（`CryptProtectData`，密钥由系统按用户托管），
+  不可用时退回 AES-256-GCM（密钥来自 `LUNARA_SECRET_KEY` 或本地 `key.bin`）。
+  文件格式 `LNR1` + 模式字节 + 载荷；损坏/换账户一律返回 `None`，回落未登录。
+- `services/account.py`：只存 `MUSIC_U` / `__csrf` / `NMTID` 三个键，其余丢弃。
+- 设置页新增「账号」页：状态文案 + 登录/退出按钮；主窗口启动时自动恢复登录态。
+- `main.py` 在 QApplication 之前设 `AA_ShareOpenGLContexts`，并把 `HTTPS_PROXY` 桥接成
+  Chromium 的 `--proxy-server`（Windows 上 Chromium 不读这些环境变量）。
 
-为什么这样最省事：**完全不用实现 weapi**（扫码/手机号登录都要加密组包），
-也不用处理验证码、设备指纹；登录这件事交给浏览器本身。
+**验证**
+- `tests/test_secret_store.py`（9 项，含「明文不在磁盘上」「密文被篡改」）
+- `tests/test_account.py`（8 项，白名单 / 落盘恢复 / 退出清理）
+- `tools/smoke_login.py`：真实加载登录页，实测收到 `JSESSIONID-WYYY` 等 Cookie
+- `shots/17_settings_account.png`：账号面板
 
-细节：
-- 依赖 `PyQt6-WebEngine`（约 150MB）。装不上时退化为「粘贴 Cookie」对话框（一个输入框，够用）。
-- 主密钥优先用 Windows DPAPI（`CryptProtectData`，按当前用户加密，不落明文密钥）；
-  失败则回退 `LUNARA_SECRET_KEY` 环境变量。
-- 只存必要的几个键，别把整份 Cookie 搬进来；退出登录 = 删文件 + 清 `CookieProvider`。
+**已知环境限制**：本机无 GPU 上下文时 Chromium 会加载失败，
+需 `QT_OPENGL=software`（登录窗口里已内置这条提示）。
 
-**接线**：侧栏「我喜欢的音乐」/「我的歌单」→ `/api/song/like`、`/api/user/playlist`；
-`Sidebar.set_playlists(list[Playlist])` 替换静态组名；喜欢按钮 → `/api/like`。
+### P5b · 我的音乐（需登录，下一轮）
 
-**验收**：浏览器里登录完，主界面头像/昵称刷新；侧栏显示真实歌单；点喜欢能落库；
-重启后仍是登录态（从加密文件恢复）。
+登录已就绪，这一轮只做「登录之后能看到什么」。
+
+**接线**
+- `/api/user/playlist`（参数 `uid/limit/offset`）→ `Sidebar.set_my_playlists()` 替换静态组名；
+- `/api/song/like`（`uid`）→ 侧栏「我喜欢的音乐」的曲目表；
+- 喜欢/取消喜欢 → `/api/like`（写操作要带 `__csrf`，登录时已一并保存）；
+- 登录态变化时清空这些缓存并重拉。
+
+**前置**：这两个接口目前还是 `UNVERIFIED`（匿名 `code=400`），
+需要你在应用里登录一次，我才能抓到真实回包、补夹具、把字段确认下来。
+
+**验收**：登录后侧栏出现真实歌单，点进去有曲目；点喜欢能落库，重启仍在。
 
 ### P6 · 下载（1 轮）
 
@@ -224,9 +236,13 @@ P3.5 新增 services/covers.py（异步下载 + 磁盘缓存 + ready 信号）  
      测试 tests/test_covers.py（4 项）                                ✅
 P4 改动  pages/now_playing.py（set_lyrics）                            ✅
      改动  main_window.py（切歌拉歌词）  widgets/lyrics.py（幽灵行）  ✅
-P5 新增  services/secret_store.py（AES-GCM / DPAPI）
-   新增  services/login_browser.py（QWebEngineView + cookie 抓取）
-   改动  widgets/sidebar.py（+1 个方法）  main_window.py（登录态联动）
+P5a 新增 services/secret_store.py（DPAPI / AES-GCM）                      ✅
+     新增 services/login_browser.py（QWebEngineView + cookie 抓取）         ✅
+     新增 services/account.py（白名单落盘 / 恢复 / 退出）                    ✅
+     改动 pages/settings.py（+账号页）  main_window.py（登录态联动）          ✅
+     改动 main.py（AA_ShareOpenGLContexts + 代理桥接）                       ✅
+     测试 tests/{test_secret_store,test_account}.py + tools/smoke_login.py   ✅
+P5b 改动 widgets/sidebar.py（+set_my_playlists）  main_window.py（登录后重拉）
 P6 新增  services/download.py  改动 pages/download.py（模拟 → 真实）
 P7 新增  docs/README-api.md
 ```
@@ -239,7 +255,7 @@ P7 新增  docs/README-api.md
 
 | # | 议题 | 决定 |
 |---|---|---|
-| 1 | 登录方式 | **开浏览器登录 → 抓 Cookie → 加密存本地**（不实现 weapi，也不用扫码接口） |
+| 1 | 登录方式 | **开浏览器登录 → 抓 Cookie → 加密存本地**（已落地：内嵌 Chromium + DPAPI，不实现 weapi） |
 | 2 | 播放内核 | **先保留虚拟时钟**，数据全部接完再换 `QMediaPlayer` |
 | 3 | 下载范围 | **统统允许下载**；界面与文档标注「仅供个人学术研究，严禁商业使用与传播」 |
 | 4 | 封面 | **真实封面优先，月牙只做空态**（未加载/失败/无图时回落） |

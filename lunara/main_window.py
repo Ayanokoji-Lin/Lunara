@@ -37,6 +37,7 @@ from .pages.now_playing import NowPlayingPage
 from .pages.playlist import PlaylistPage
 from .pages.search import SearchPage
 from .pages.settings import SettingsPage
+from .services.account import AccountStore, apply_cookies, forget_cookies
 from .services.async_bridge import run_sync, shutdown as shutdown_bridge
 from .services.covers import covers
 from .services.catalog import (
@@ -51,6 +52,7 @@ from .services.catalog import (
 )
 from .services.lyrics import parse_lyric_response
 from .services.qt_bridge import QtAsyncBridge
+from .services.session import SessionService, SessionState
 from .widgets.player_bar import PlayerBar
 from .widgets.sidebar import Sidebar
 from .widgets.topbar import TopBar
@@ -176,7 +178,15 @@ class MainWindow(QWidget):
         self.search_page.resultsRequested.connect(self._request_search_for_tab)
         self.search_page.playlistActivated.connect(self.open_playlist)
         self.player.trackChanged.connect(self._load_lyric)
+        self.settings_page.loginRequested.connect(self._on_login_requested)
+        self.settings_page.logoutRequested.connect(self._on_logout_requested)
+
+        self._account = AccountStore()
+        self._session: SessionService | None = None
+        self._restore_login()
+
         QTimer.singleShot(0, self._load_home)
+        QTimer.singleShot(0, self._refresh_account)
 
     # ================= 导航 =================
     def _show(self, index: int, record: bool = True) -> None:
@@ -281,6 +291,63 @@ class MainWindow(QWidget):
 
     def _on_lyric_error(self, error: BaseException) -> None:
         api_log.get_logger().warning("歌词未加载，沿用演示歌词：%s", error)
+
+    # ================= 账号 =================
+    def _restore_login(self) -> None:
+        """启动时从加密文件恢复登录态（文件损坏就当未登录，不打扰用户）。"""
+        cookies = self._account.load()
+        if not cookies:
+            return
+        apply_cookies(get_client(), cookies)
+        api_log.get_logger().info("已恢复登录态（%s）", self._account.store.backend)
+
+    def _refresh_account(self) -> None:
+        self._bridge.submit(
+            self._fetch_account(),
+            on_success=self._on_account_state,
+            on_error=self._on_account_error,
+        )
+
+    async def _fetch_account(self) -> SessionState:
+        client = get_client()
+        if self._session is None:
+            self._session = SessionService(client)
+        return await self._session.state(force=True)
+
+    def _on_account_state(self, state: SessionState) -> None:
+        self.settings_page.set_account(
+            logged_in=state.logged_in, nickname=state.nickname, vip=state.vip
+        )
+
+    def _on_account_error(self, error: BaseException) -> None:
+        api_log.get_logger().warning("登录态查询失败，按未登录处理：%s", error)
+
+    def _on_login_requested(self) -> None:
+        """开内嵌浏览器登录 → 抓 Cookie → 加密落盘 → 刷新会员态。"""
+        try:
+            from .services.login_browser import collect_login_cookies
+        except Exception as exc:  # noqa: BLE001 - 缺 WebEngine 时给出可读日志
+            api_log.get_logger().warning("登录窗口不可用：%s", exc)
+            return
+
+        cookies = collect_login_cookies(self)
+        if not cookies:
+            return
+        if not self._account.save(cookies):
+            api_log.get_logger().warning("登录信息不完整（缺少 MUSIC_U），未保存")
+            return
+
+        apply_cookies(get_client(), cookies)
+        if self._session is not None:
+            self._session.invalidate()
+        self._refresh_account()
+
+    def _on_logout_requested(self) -> None:
+        self._account.clear()
+        forget_cookies(get_client())
+        if self._session is not None:
+            self._session.invalidate()
+        self.settings_page.set_account(logged_in=False)
 
     # ================= 退出清理 =================
     async def _shutdown_services(self) -> None:

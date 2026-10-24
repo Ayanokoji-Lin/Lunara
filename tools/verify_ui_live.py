@@ -164,6 +164,15 @@ def main() -> int:
     win.grab().save(os.path.join(OUT, "16_now_playing_live.png"))
     print("saved shots/16_now_playing_live.png")
 
+    # ---------------- 账号面板 ----------------
+    win.navigate("settings")
+    win.settings_page.switch(3)  # 账号
+    settle(app, 0.5)
+    print(f"\n账号面板：{win.settings_page.lbl_account.text()}"
+          f" | 登录按钮可见={win.settings_page.btn_login.isVisible()}")
+    win.grab().save(os.path.join(OUT, "17_settings_account.png"))
+    print("saved shots/17_settings_account.png")
+
     win.close()
     return 0 if ok else 1
 

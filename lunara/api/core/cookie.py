@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass, field
-from typing import Mapping
+from typing import Iterable, Mapping
 
 #: 实测可用的匿名 Cookie 字段（顺序无关）
 ANONYMOUS_FIELDS: tuple[tuple[str, str], ...] = (
@@ -46,8 +46,13 @@ class CookieProvider:
     def clear_login_cookie(self) -> None:
         self._fields.pop("MUSIC_U", None)
 
+    def remove(self, keys: Iterable[str]) -> None:
+        """按名字摘掉若干键（退出登录用）。"""
+        for key in keys:
+            self._fields.pop(key, None)
+
     def merge(self, extra: Mapping[str, str]) -> None:
-        self._fields.update(extra)
+        self._fields.update({k: v for k, v in extra.items() if v})
 
     def header(self) -> str:
         return "; ".join(f"{key}={value}" for key, value in self._fields.items())
