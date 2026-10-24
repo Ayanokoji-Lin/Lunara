@@ -13,6 +13,7 @@ from ..core.player import Player
 from ..data import BANNERS, PLAYLISTS, TRACKS, Playlist, Track
 from ..widgets.banner import BannerCarousel
 from ..widgets.common import SectionHeader
+from ..services.covers import covers
 from ..widgets.anim import detach, stagger
 from ..widgets.cover import CoverCard
 from .base import BasePage
@@ -43,8 +44,8 @@ class HomePage(BasePage):
         self.player = player
         self.body.setSpacing(26)
 
-        self._playlists: list[Playlist] = list(PLAYLISTS)
-        self._new_songs: list[Track] = list(TRACKS[: self.COLS])
+        self._playlists: list[Playlist] = []
+        self._new_songs: list[Track] = []
 
         # ---------- 问候 ----------
         head = QWidget()
@@ -102,9 +103,7 @@ class HomePage(BasePage):
         self._rebuild_playlists()
 
     def set_new_songs(self, tracks: list[Track]) -> None:
-        """换成真实新歌。空列表同上。"""
-        if not tracks:
-            return
+        """换成真实新歌；空列表就是空态。"""
         self._new_songs = list(tracks)
         self.hdr_news.hint.setText(f"本周新增 {len(self._new_songs)} 首")
         self._rebuild_songs()
@@ -128,10 +127,22 @@ class HomePage(BasePage):
             grid.addWidget(card, i // self.COLS, i % self.COLS)
             cards.append(card)
 
+        if not cards:
+            hint = QLabel("登录后这里会出现为你推荐的歌单")
+            hint.setObjectName("BodyText")
+            hint.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            hint.setFixedHeight(120)
+            self._pl_layout.addWidget(hint)
+            return
+
         wrap = QWidget()
         wrap.setLayout(grid)
         self._pl_layout.addWidget(wrap)
         stagger(cards, step=16, duration=220, limit=20)
+        for item in self._new_songs[: self.COLS]:
+            covers().request(item.seed, item.cover_url)
+        for item in self._playlists:
+            covers().request(item.id, item.cover_url)
 
     def _rebuild_songs(self) -> None:
         _clear(self._song_layout)
@@ -152,10 +163,20 @@ class HomePage(BasePage):
             grid.addWidget(card, 0, i)
             cards.append(card)
 
+        if not cards:
+            hint = QLabel("还没有新歌推荐，登录后这里会更热闹")
+            hint.setObjectName("BodyText")
+            hint.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            hint.setFixedHeight(120)
+            self._song_layout.addWidget(hint)
+            return
+
         wrap = QWidget()
         wrap.setLayout(grid)
         self._song_layout.addWidget(wrap)
         stagger(cards, step=16, duration=220, limit=20)
+        for item in self._new_songs[: self.COLS]:
+            covers().request(item.seed, item.cover_url)
 
     def _on_banner(self, index: int) -> None:
         if 0 <= index < len(self._playlists):

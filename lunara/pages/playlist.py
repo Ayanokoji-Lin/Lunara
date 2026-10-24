@@ -30,7 +30,8 @@ class PlaylistPage(BasePage):
     def __init__(self, player: Player, parent: QWidget | None = None):
         super().__init__(parent=parent)
         self.player = player
-        self._playlist: Playlist = PLAYLISTS[0]
+        self._playlist: Playlist = Playlist(0, "", "", 0, 0)
+        self._empty_text = ""
 
         # ---------------- 顶部信息区 ----------------
         header = QWidget()
@@ -119,6 +120,12 @@ class PlaylistPage(BasePage):
         pl.addWidget(self.filter)
         self.table = TrackTable()
         pl.addWidget(self.table)
+        self.empty = QLabel("")
+        self.empty.setObjectName("BodyText")
+        self.empty.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.empty.setFixedHeight(160)
+        self.empty.hide()
+        pl.addWidget(self.empty)
         self.body.addWidget(panel)
         self.body.addStretch(1)
 
@@ -126,7 +133,7 @@ class PlaylistPage(BasePage):
         self.table.deleteFileRequested.connect(self.deleteLocalRequested)
         self.player.trackChanged.connect(self.table.set_playing)
 
-        self.set_playlist(PLAYLISTS[0])
+        self.set_playlist(Playlist(0, "", "", 0, 0))
 
     # ---------------- 数据 ----------------
     def _apply_filter(self, text: str) -> None:
@@ -175,6 +182,18 @@ class PlaylistPage(BasePage):
         self.lbl_list.hint.setText(f"共 {len(self._tracks)} 首")
         self.table.set_tracks(self._tracks)
         self.table.set_playing(self.player.current)
+        self._sync_empty()
+
+    def _sync_empty(self) -> None:
+        empty = not self._tracks
+        self.empty.setVisible(empty)
+        self.table.setVisible(not empty)
+        if empty:
+            self.empty.setText(self._empty_text or "这里还没有歌")
+
+    def set_empty_text(self, text: str) -> None:
+        self._empty_text = text
+        self._sync_empty()
 
     def _play_all(self) -> None:
         if self._tracks:

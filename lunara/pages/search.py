@@ -247,6 +247,10 @@ class SearchPage(BasePage):
             self.resultsRequested.emit(self._query, index)
 
     # ---------------- 搜索（本地兜底） ----------------
+    def clear(self) -> None:
+        """清空搜索页（退出登录 / 切换账号时用）。"""
+        self.search("")
+
     def search(self, text: str) -> None:
         q = text.strip()
         if q != self._query:
@@ -258,21 +262,9 @@ class SearchPage(BasePage):
             self._refresh()
             return
 
-        self._tracks = [t for t in TRACKS
-                        if q in t.title or q in t.artist or q in t.album]
-        artists: dict[str, Track] = {}
-        albums: dict[str, Track] = {}
-        for t in self._tracks:
-            artists.setdefault(t.artist, t)
-            albums.setdefault(t.album, t)
-        self._artists = [
-            CardItem(seed=t.seed, hue=t.hue, title=name, subtitle="歌手")
-            for name, t in artists.items()
-        ]
-        self._albums = [
-            CardItem(seed=t.seed, hue=t.hue, title=name, subtitle=t.artist)
-            for name, t in albums.items()
-        ]
+        # 没有真实结果就空着（以前这里会拿演示曲库凑数）
+        self._tracks, self._artists, self._albums, self._lists = [], [], [], []
+        self.table.set_tracks([])
         self._lists = [p for p in PLAYLISTS if q in p.title or q in p.author]
         self.table.set_tracks(self._tracks)
         self._refresh()

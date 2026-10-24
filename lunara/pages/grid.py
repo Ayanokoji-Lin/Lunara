@@ -9,6 +9,7 @@ from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtWidgets import QGridLayout, QLabel, QVBoxLayout, QWidget
 
 from ..services.catalog import CardItem
+from ..services.covers import covers
 from ..widgets.anim import detach, stagger
 from ..widgets.cover import CoverCard
 from .base import BasePage
@@ -86,3 +87,5 @@ class GridPage(BasePage):
             self._cards.append(card)
 
         stagger(self._cards, step=16, duration=220, limit=20)
+        for item in self._items:                 # 屏幕外的封面也先下载
+            covers().request(item.seed, item.cover_url)

@@ -178,11 +178,8 @@ class Sidebar(QFrame):
         return lbl
 
     def _default_groups(self) -> list[tuple[str, list[tuple[str, str]]]]:
-        """演示用的分组（未登录时显示）。"""
-        return [
-            (title, [(name, f"playlist:{gi * 3 + ni}") for ni, name in enumerate(names)])
-            for gi, (title, names) in enumerate(self.GROUPS)
-        ]
+        """未登录时不给任何演示歌单——空着比假数据诚实。"""
+        return []
 
     def _rebuild_groups(
         self, groups: list[tuple[str, list[tuple[str, str]]]] | None = None
@@ -260,7 +257,7 @@ class Sidebar(QFrame):
             t.setIcon(icon("fa5s.chevron-down" if checked else "fa5s.chevron-right",
                            THEME["text_dim"]))
 
-        btn.clicked.connect(lambda _=False, b=body: toggle(b.isVisible(), b, btn))
+        btn.clicked.connect(lambda _=False, b=body: toggle(not b.isVisible(), b, btn))
         return box
 
     # ---------------- 选中 ----------------

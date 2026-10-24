@@ -112,6 +112,22 @@ class CoverService(QObject):
             self._pending.discard(seed)
         return None
 
+    def request(self, seed: int, url: str) -> None:
+        """只发起下载、不解码。
+
+        列表里的卡片要滚到可视区才会 paint；不预热的话，屏幕外的封面永远不下载，
+        滚过去时先看到空态月牙，再等一轮网络才换图。
+        """
+        if not url or seed in self._pixmaps or seed in self._pending:
+            return
+        if self._read_disk(url) is not None:
+            return                      # 磁盘里有，等绘制时再解码
+        self._pending.add(seed)
+        try:
+            self._loop.submit(self._download(seed, url))
+        except Exception:  # noqa: BLE001
+            self._pending.discard(seed)
+
     def cached(self, seed: int) -> QPixmap | None:
         return self._pixmaps.get(seed)
 

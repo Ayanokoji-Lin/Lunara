@@ -473,9 +473,9 @@ QTableCornerButton::section { background: transparent; border: none; }
 
 /* ===================== 菜单 ===================== */
 QMenu {
-    background-color: $bg_panel;
+    background-color: $bg_elev;
     border: 1px solid $border;
-    border-radius: 8px;
+    border-radius: 10px;
     padding: 6px;
 }
 QMenu::item {
@@ -526,12 +526,62 @@ QComboBox {
 }
 QComboBox:hover { border: 1px solid $primary; }
 QComboBox::drop-down { border: none; width: 18px; }
+QComboBox::down-arrow {
+    image: none;
+    border-left: 4px solid transparent;
+    border-right: 4px solid transparent;
+    border-top: 5px solid $text_dim;
+    width: 0; height: 0;
+    margin-right: 8px;
+}
+QComboBox::drop-down { border: none; width: 24px; }
 QComboBox QAbstractItemView {
-    background-color: $bg_panel;
+    background-color: $bg_elev;
     border: 1px solid $border;
-    border-radius: 6px;
+    border-radius: 10px;
+    padding: 6px;
     selection-background-color: $primary_soft;
+    selection-color: $text_main;
     outline: none;
+}
+QComboBox QAbstractItemView::item {
+    min-height: 30px;
+    padding-left: 10px;
+    border-radius: 6px;
+    color: $text_main;
+}
+QComboBox QAbstractItemView::item:hover {
+    background-color: $primary_soft;
+}
+
+QPushButton#QualityChip {
+    background-color: rgba(139, 92, 246, 0.16);
+    color: $primary;
+    border: 1px solid rgba(139, 92, 246, 0.45);
+    border-radius: 12px;
+    padding: 0 10px;
+    font-size: 11px;
+}
+QPushButton#QualityChip:hover {
+    background-color: rgba(139, 92, 246, 0.28);
+    border: 1px solid rgba(139, 92, 246, 0.7);
+}
+
+/* ===================== 提示框 ===================== */
+QDialog#LunaraDialog {
+    background-color: $bg_elev;
+    border: 1px solid $border;
+    border-radius: 14px;
+}
+QLabel#DialogTitle {
+    color: $text_main;
+    font-size: 14px;
+    font-weight: 600;
+}
+QLabel#DialogBody {
+    color: $text_sub;
+    font-size: 12px;
+    line-height: 20px;
 }
 
 /* ===================== 歌词 ===================== */

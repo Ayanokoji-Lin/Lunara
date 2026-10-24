@@ -36,8 +36,21 @@ class _ClickDisc(VinylDisc):
         super().mouseReleaseEvent(e)
 
 
+#: 音质短标签（播放栏空间小）
+QUALITY_LABEL = {
+    "standard": "标准",
+    "higher": "较高",
+    "exhigh": "极高",
+    "lossless": "无损",
+    "hires": "Hi-Res",
+    "jymaster": "母带",
+}
+QUALITY_ORDER = ("standard", "higher", "exhigh", "lossless", "hires", "jymaster")
+
+
 class PlayerBar(QFrame):
     openNowPlaying = pyqtSignal()
+    qualityChanged = pyqtSignal(str)      # 实时切音质
 
     def __init__(self, player: Player, parent: QWidget | None = None):
         super().__init__(parent)
@@ -136,6 +149,15 @@ class PlayerBar(QFrame):
         rh.setSpacing(6)
         rh.addStretch(1)
 
+        self.btn_quality = QPushButton(QUALITY_LABEL["exhigh"])
+        self.btn_quality.setObjectName("QualityChip")
+        self.btn_quality.setFixedHeight(24)
+        self.btn_quality.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_quality.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.btn_quality.setToolTip("切换音质（立即生效）")
+        self.btn_quality.clicked.connect(self._pick_quality)
+        rh.addWidget(self.btn_quality)
+
         self.btn_mode = IconButton(MODE_ICON[player.mode], THEME["text_sub"], 14, 30,
                                    MODE_TEXT[player.mode])
         self.btn_mode.clicked.connect(player.cycle_mode)
@@ -171,6 +193,22 @@ class PlayerBar(QFrame):
         self._on_playing(False)
         if player.current is not None:
             self._on_track(player.current)
+
+    # ---------------- 音质 ----------------
+    def set_quality(self, value: str) -> None:
+        self._quality = value
+        self.btn_quality.setText(QUALITY_LABEL.get(value, "标准"))
+
+    def _pick_quality(self) -> None:
+        menu = QMenu(self)
+        current = getattr(self, "_quality", "exhigh")
+        for level in reversed(QUALITY_ORDER):
+            label = QUALITY_LABEL[level]
+            action = menu.addAction(("● " if level == current else "    ") + label)
+            action.triggered.connect(
+                lambda _=False, v=level: self.qualityChanged.emit(v))
+        menu.exec(self.btn_quality.mapToGlobal(
+            self.btn_quality.rect().bottomLeft()))
 
     # ---------------- 槽 ----------------
     def _on_track(self, track: Track | None) -> None:

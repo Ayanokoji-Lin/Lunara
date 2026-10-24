@@ -50,6 +50,7 @@ def test_dead_entries_are_dropped(qt_app) -> None:
     side.set_my_playlists([_playlist(1, "我的歌单")], [])
     _pump(qt_app)
 
-    # 演示分组的 6 个 key 必须被清掉，不能残留死引用
+    # 演示分组的 key 必须被清掉，不能残留死引用
     assert not [k for k in side._items if k.startswith("playlist:")]
-    assert len(side._items) < before + 1
+    # 只剩固定导航项 + 1 个真实歌单
+    assert len(side._items) == before + 1

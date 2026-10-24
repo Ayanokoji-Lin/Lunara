@@ -26,8 +26,10 @@ from PyQt6.QtWidgets import (
 )
 
 from ..core.player import Player
+from ..widgets.dialog import confirm
 from ..widgets.anim import Coalescer
 from ..core.player import Player
+from ..widgets.dialog import confirm
 from ..data import DownloadTask, Track
 from ..services.download.naming import format_size
 from ..services.download.notice import NOTICE_TEXT, write_notice_file
@@ -444,23 +446,10 @@ class DownloadPage(BasePage):
     # ---------------- 删除 ----------------
     def _confirm(self, title: str, text: str, *, has_file: bool) -> tuple[bool, bool]:
         """返回 (是否确认, 是否同时删文件)。没有文件时第二个值恒为 False。"""
-        box = QMessageBox(self)
-        box.setWindowTitle(title)
-        box.setText(text)
-        box.setIcon(QMessageBox.Icon.Warning)
-        box.setStandardButtons(QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel)
-        box.button(QMessageBox.StandardButton.Yes).setText("删除")
-        box.button(QMessageBox.StandardButton.Cancel).setText("取消")
-        box.setDefaultButton(QMessageBox.StandardButton.Cancel)
-
-        check = None
-        if has_file:
-            check = QCheckBox("同时删除本地文件（移到回收站）")
-            check.setChecked(True)
-            box.setCheckBox(check)
-
-        ok = box.exec() == QMessageBox.StandardButton.Yes
-        return ok, bool(check is not None and check.isChecked())
+        return confirm(
+            self, title, text, level="warning", ok_text="删除",
+            checkbox="同时删除本地文件（移到回收站）" if has_file else None,
+        )
 
     def _delete_one(self, task: DownloadTask) -> None:
         exists = Path(task.file_path).exists()

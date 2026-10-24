@@ -24,7 +24,6 @@ class TopBar(QFrame):
     backClicked = pyqtSignal()
     forwardClicked = pyqtSignal()
     accountClicked = pyqtSignal()
-    notifyClicked = pyqtSignal()
     minimizeRequested = pyqtSignal()
     maximizeRequested = pyqtSignal()
     closeRequested = pyqtSignal()
@@ -80,10 +79,7 @@ class TopBar(QFrame):
         lay.addWidget(self.avatar)
         lay.addSpacing(4)
 
-        self.btn_bell = IconButton("fa5s.bell", THEME["text_sub"], 15, 32, "通知")
-        self.btn_bell.clicked.connect(self.notifyClicked)
         self.btn_cog = IconButton("fa5s.cog", THEME["text_sub"], 15, 32, "设置")
-        lay.addWidget(self.btn_bell)
         lay.addWidget(self.btn_cog)
 
         divider = QFrame()

@@ -38,6 +38,7 @@ MODE_NAMES = ("唱片 + 歌词", "纯歌词", "纯封面")
 
 class NowPlayingPage(QWidget):
     backRequested = pyqtSignal()
+    fullscreenRequested = pyqtSignal()
 
     def __init__(self, player: Player, parent: QWidget | None = None):
         super().__init__(parent)
@@ -87,6 +88,9 @@ class NowPlayingPage(QWidget):
             self._mode_group.addButton(b, i)
             self._mode_btns.append(b)
             top.addWidget(b)
+        self.btn_full = IconButton("fa5s.expand", THEME["text_sub"], 13, 30, "全屏播放（F11）")
+        self.btn_full.clicked.connect(self.fullscreenRequested)
+        top.addWidget(self.btn_full)
         self._mode_group.idClicked.connect(self.set_mode)
         root.addLayout(top)
 

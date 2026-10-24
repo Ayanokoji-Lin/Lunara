@@ -77,6 +77,11 @@ class LyricView(QWidget):
         self._index = -1
         self._offset_px = 0.0
         self._offset_ms = 0
+        self._follow = True                     # 是否跟随播放自动滚
+        self._resume = QTimer(self)             # 手动滚动后延迟恢复跟随
+        self._resume.setSingleShot(True)
+        self._resume.setInterval(2600)
+        self._resume.timeout.connect(self._resume_follow)
 
         self._anim = QPropertyAnimation(self, b"offset", self)
         self._anim.setDuration(420)
@@ -147,6 +152,26 @@ class LyricView(QWidget):
         if idx != self._index:
             self._set_index(idx)
 
+    def wheelEvent(self, event) -> None:
+        """滚轮手动翻歌词；停手 2.6 秒后自动回到跟随播放。"""
+        if not self._lines:
+            return
+        delta = event.angleDelta().y() or event.angleDelta().x()
+        if not delta:
+            return
+        self._follow = False
+        self._anim.stop()
+        limit = max(0.0, self._container.height() - self.height())
+        target = self._offset_px - delta * 0.6
+        self.set_offset_px(max(0.0, min(target, limit)))
+        self._resume.start()
+        event.accept()
+
+    def _resume_follow(self) -> None:
+        self._follow = True
+        if self._index >= 0:
+            self._scroll_to(self._index, animate=True)
+
     def _set_index(self, idx: int) -> None:
         old = self._index
         self._index = idx
@@ -160,7 +185,8 @@ class LyricView(QWidget):
                 label.style().unpolish(label)
                 label.style().polish(label)
         self._relayout()
-        QTimer.singleShot(0, lambda: self._scroll_to(idx, animate=True))
+        if self._follow:
+            QTimer.singleShot(0, lambda: self._scroll_to(idx, animate=True))
 
     def _scroll_to(self, idx: int, *, animate: bool) -> None:
         if not (0 <= idx < len(self._lines)):

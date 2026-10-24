@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 import random
 from pathlib import Path
 
@@ -40,10 +41,10 @@ from .api.modules.search import (
     search_songs,
 )
 from .core.player import Player
-from .data import (PLAYLISTS, TRACKS, DownloadTask, Playlist, Track,
-                   demo_playlist, is_demo_playlist)
+from .data import DownloadTask, Playlist, Track
 from .pages.grid import GridPage
 from .widgets.anim import fade_in
+from .widgets.dialog import confirm
 from .pages.download import DownloadPage
 from .pages.home import HomePage
 from .pages.now_playing import NowPlayingPage
@@ -60,6 +61,7 @@ from .services.player_url.service import PlayerUrlService
 from .services.player_url.types import ResolveOutcome
 from .services.local_library import scan
 from .services import queue_store
+from .services.error_hook import install as install_error_hook
 from .services.recent import RecentStore
 from .services.settings_store import SettingsStore
 from .services.catalog import (
@@ -99,6 +101,13 @@ P_HOME, P_PLAYLIST, P_SEARCH, P_SETTINGS, P_NOW, P_DOWNLOAD, P_GRID = range(7)
 #: 单曲搜索每页条数（「加载更多」按这个步进）
 SEARCH_PAGE_SIZE = 30
 
+def _force_exit() -> None:
+    """事件循环卡住时的最后手段：直接结束进程。"""
+    app = QApplication.instance()
+    if app is not None:
+        os._exit(0)
+
+
 class MainWindow(QWidget):
     def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
@@ -109,7 +118,6 @@ class MainWindow(QWidget):
         self.resize(1280, 820)
 
         self.player = Player(self)
-        self.player.set_queue(TRACKS, 0, autoplay=False)
 
         # ---------------- 外层：留出阴影空间 ----------------
         self._outer = QVBoxLayout(self)
@@ -211,17 +219,16 @@ class MainWindow(QWidget):
         self.topbar.searchChanged.connect(self._on_search_live)
         self.topbar.btn_cog.clicked.connect(lambda: self.navigate("settings"))
         self.topbar.accountClicked.connect(lambda: self.navigate("settings"))
-        self.topbar.notifyClicked.connect(
-            lambda: self.banner.show_message("暂时没有新通知", level="info", timeout_ms=3000))
+
         self.topbar.accountClicked.connect(lambda: self.navigate("settings"))
-        self.topbar.notifyClicked.connect(
-            lambda: self.banner.show_message("暂时没有新通知", level="info", timeout_ms=3000))
+
         self.topbar.minimizeRequested.connect(self.showMinimized)
         self.topbar.maximizeRequested.connect(self.toggle_maximize)
         self.topbar.closeRequested.connect(self.close)
         self.topbar.backClicked.connect(self.go_back)
         self.topbar.forwardClicked.connect(self.go_forward)
         self.player_bar.openNowPlaying.connect(self.open_now_playing)
+        self.player_bar.qualityChanged.connect(self._on_quality_changed)
         self.player.urlRequested.connect(self._on_url_requested)
         self.player.errorOccurred.connect(self._on_player_error)
         self.player.trialModeChanged.connect(self._on_trial_changed)
@@ -238,6 +245,7 @@ class MainWindow(QWidget):
         self._sleep_timer.timeout.connect(self._on_sleep_timeout)
         self.player.volumeChanged.connect(self._remember_volume)
         QTimer.singleShot(0, self._restore_session)
+        QTimer.singleShot(0, lambda: install_error_hook(self))
         self.search_page.set_history(list(self._settings.get("search_history") or []))
         QTimer.singleShot(1500, self._import_existing_files)
 
@@ -256,6 +264,7 @@ class MainWindow(QWidget):
         self._settings.changed.connect(self._on_setting_changed)
         self.now_playing.set_mode(int(self._settings.get("player_view", 0)))
         self.now_playing.backRequested.connect(self.go_back)
+        self.now_playing.fullscreenRequested.connect(self.toggle_playing_fullscreen)
 
         # 窗口缩放（无边框窗口需要自己挂 QSizeGrip）
         self.grip = QSizeGrip(self.root)
@@ -311,6 +320,7 @@ class MainWindow(QWidget):
 
     # ================= 导航 =================
     def _show(self, index: int, record: bool = True) -> None:
+        self._nav_index = index
         changed = self.stack.currentIndex() != index
         self.stack.setCurrentIndex(index)
         if changed:
@@ -327,16 +337,17 @@ class MainWindow(QWidget):
         self._hpos = len(self._history) - 1
 
     def navigate(self, key: str) -> None:
+        # 已经停在这个页面就别再请求一次：重复点同一个侧栏项会重复打接口、重复重建列表
+        if key == getattr(self, "_nav_key", None) and \
+                self.stack.currentIndex() == getattr(self, "_nav_index", -1):
+            return
+        self._nav_key = key
+        self._nav_index = -1        # 真正的页面索引在处理完后由 _show 回填
+
         if key == "home":
             self._show(P_HOME)
         elif key == "settings":
             self._show(P_SETTINGS)
-        elif key.startswith("playlist:"):
-            try:
-                idx = int(key.split(":")[1])
-            except (IndexError, ValueError):
-                idx = 0
-            self.open_playlist(PLAYLISTS[idx % len(PLAYLISTS)].id)
         elif key.startswith("myplaylist:"):
             try:
                 pid = int(key.split(":", 1)[1])
@@ -347,8 +358,10 @@ class MainWindow(QWidget):
             if self._liked_id:
                 self.open_playlist(self._liked_id)   # 真实「我喜欢的音乐」就是个歌单
                 return
-            pl = Playlist(0, "我喜欢的音乐", "蝶恋", 128_000, 268, "我喜欢的")
-            self.playlist_page.set_playlist(pl, TRACKS[:8], title="我喜欢的音乐")
+            pl = Playlist(0, "我喜欢的音乐", "", 0, 268, "我喜欢的")
+            self.playlist_page.set_playlist(pl, [], title="我喜欢的音乐",
+                                            subtitle="登录后显示你收藏的歌曲")
+            self.playlist_page.set_empty_text("登录后这里会显示你喜欢的歌")
             self._show(P_PLAYLIST)
         elif key == "recent":
             self._open_recent()
@@ -367,11 +380,8 @@ class MainWindow(QWidget):
         演示歌单（101 起）只存在于本地，直接渲染、不发请求——否则会拿一个
         不存在的 id 去查详情，得到一个解析失败和一条没必要的错误提示。
         """
-        if is_demo_playlist(pid):
-            demo = demo_playlist(pid)
-            if demo is not None:
-                self.playlist_page.set_playlist(demo, list(demo.tracks), title=demo.title)
-            self._show(P_PLAYLIST)
+        if pid <= 0:
+            self._show_error("歌单不存在")
             return
 
         self._show(P_PLAYLIST)
@@ -501,6 +511,10 @@ class MainWindow(QWidget):
         api_log.get_logger().warning("歌词未加载，沿用演示歌词：%s", error)
 
     # ================= 提示 =================
+    def show_notice(self, message: str) -> None:
+        """Qt 警告 / 一般提示都走这条信息条（不弹窗，避免刷屏）。"""
+        self.banner.show_message(message[:200], level="warning", timeout_ms=5000)
+
     def _show_error(self, message: str) -> None:
         """所有页面级错误都走这条细条，不弹窗。"""
         self.banner.show_message(message, level="error", timeout_ms=6000)
@@ -687,15 +701,10 @@ class MainWindow(QWidget):
             return
         names = "\n".join(f"· {t.title}" for t in tracks[:8])
         more = "" if len(tracks) <= 8 else f"\n… 还有 {len(tracks) - 8} 首"
-        box = QMessageBox(self)
-        box.setWindowTitle("从磁盘删除")
-        box.setIcon(QMessageBox.Icon.Warning)
-        box.setText(f"把 {len(tracks)} 个文件移到回收站？\n\n{names}{more}")
-        box.setStandardButtons(QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel)
-        box.button(QMessageBox.StandardButton.Yes).setText("移到回收站")
-        box.button(QMessageBox.StandardButton.Cancel).setText("取消")
-        box.setDefaultButton(QMessageBox.StandardButton.Cancel)
-        if box.exec() != QMessageBox.StandardButton.Yes:
+        ok, _ = confirm(self, "从磁盘删除",
+                        f"把 {len(tracks)} 个文件移到回收站？\n\n{names}{more}",
+                        level="warning", ok_text="移到回收站")
+        if not ok:
             return
 
         removed = 0
@@ -835,6 +844,8 @@ class MainWindow(QWidget):
         self._close_to_tray = False
         self._tray.hide()
         self.close()
+        # 再兜一层：2 秒后事件循环还没结束就硬退，避免「点了退出但进程还在」
+        QTimer.singleShot(2000, _force_exit)
 
     def _restore_geometry(self) -> None:
         raw = self._settings.get("window_geometry")
@@ -889,6 +900,7 @@ class MainWindow(QWidget):
         """上次退出时的音量、倍速、队列（不开播）。"""
         self.player.set_volume(int(self._settings.get("volume", self.player.volume)))
         self.player.set_rate(float(self._settings.get("playback_rate", 1.0)))
+        self.player_bar.set_quality(str(self._settings.get("play_quality", "exhigh")))
         self.now_playing.set_lyric_offset(int(self._settings.get("lyric_offset", 0)))
         self.now_playing.set_lyric_offset(int(self._settings.get("lyric_offset", 0)))
         self._apply_sleep(int(self._settings.get("sleep_minutes", 0)))
@@ -939,6 +951,12 @@ class MainWindow(QWidget):
     def _on_queue_append(self, track: Track) -> None:
         self.player.queue.append(track)
         self.banner.show_message(f"已加到队列末尾：{track.title}", level="info", timeout_ms=3000)
+
+    def _on_quality_changed(self, value: str) -> None:
+        if value == self._settings.get("play_quality"):
+            return
+        self._settings.set("play_quality", value)     # 触发 _on_setting_changed → 重新解析
+        self.banner.show_message(f"音质已切换为 {value}", level="info", timeout_ms=2500)
 
     def _reload_current_quality(self) -> None:
         """换音质后重新解析当前曲目，并回到原来的位置。"""
@@ -1200,6 +1218,17 @@ class MainWindow(QWidget):
         self.playlist_page.table.set_tracks([])
         self.sidebar.set_my_playlists([], [])
         self.settings_page.set_account(logged_in=False)
+        # 立刻把页面也换掉，别让登录时的内容留在屏幕上
+        self.home.set_playlists([])
+        self.home.set_new_songs([])
+        self.playlist_page.set_playlist(Playlist(0, "", "", 0, 0), [], title="",
+                                        subtitle="登录后显示内容")
+        self.playlist_page.set_empty_text("登录后显示内容")
+        self.search_page.clear()
+        self._recommended.clear()
+        self._podcast_tracks.clear()
+        self.topbar.set_avatar(None)
+        self.navigate("home")
 
     # ================= 退出清理 =================
     async def _shutdown_services(self) -> None:
@@ -1232,6 +1261,41 @@ class MainWindow(QWidget):
             pass
         shutdown_bridge()
         super().closeEvent(event)
+        # 兜底：WebEngine / 残留窗口都可能让事件循环不退出，这里主动 quit
+        QTimer.singleShot(0, QApplication.instance().quit)
+
+    # ---------------- 全屏播放 ----------------
+    def toggle_playing_fullscreen(self) -> None:
+        """播放页全屏：藏起侧栏 / 顶栏 / 播放栏，Esc 或 F11 退出。"""
+        if getattr(self, "_playing_fullscreen", False):
+            self._exit_playing_fullscreen()
+            return
+
+        self._playing_fullscreen = True
+        self._fs_state = (self.sidebar.isVisible(), self.topbar.isVisible(),
+                          self.player_bar.isVisible())
+        self.sidebar.hide()
+        self.topbar.hide()
+        self.player_bar.hide()
+        self._show(P_NOW)
+        self.showFullScreen()
+
+    def _exit_playing_fullscreen(self) -> None:
+        self._playing_fullscreen = False
+        self.showNormal()
+        sidebar, topbar, bar = getattr(self, "_fs_state", (True, True, True))
+        self.sidebar.setVisible(sidebar)
+        self.topbar.setVisible(topbar)
+        self.player_bar.setVisible(bar)
+
+    def keyPressEvent(self, event) -> None:
+        if event.key() == Qt.Key.Key_Escape and getattr(self, "_playing_fullscreen", False):
+            self._exit_playing_fullscreen()
+            return
+        if event.key() == Qt.Key.Key_F11:
+            self.toggle_playing_fullscreen()
+            return
+        super().keyPressEvent(event)
 
     def open_now_playing(self) -> None:
         self._show(P_NOW)

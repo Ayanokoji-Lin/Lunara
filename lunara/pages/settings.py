@@ -22,6 +22,7 @@ from ..services.settings_store import (
     quality_index,
 )
 from ..theme import THEME
+from ..widgets.dialog import alert
 from ..widgets.common import Divider, font
 from ..widgets.sidebar import LogoMark
 from ..widgets.toggle import Switch
@@ -389,7 +390,7 @@ class SettingsPage(BasePage):
                         path.unlink()
                     except OSError:
                         pass
-        QMessageBox.information(self, "清理完成", f"已清理封面缓存 {freed / 1e6:.1f} MB")
+        alert(self, "清理完成", f"已清理封面缓存 {freed / 1e6:.1f} MB", level="success")
 
     def _open_logs(self) -> None:
         from PyQt6.QtCore import QUrl

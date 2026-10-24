@@ -19,7 +19,13 @@ from PyQt6.QtCore import (
     pyqtSignal,
 )
 from PyQt6.QtGui import QColor, QPainter
-from PyQt6.QtWidgets import QAbstractItemView, QHeaderView, QStyledItemDelegate, QTableView
+from PyQt6.QtWidgets import (
+    QAbstractItemView,
+    QHeaderView,
+    QMenu,
+    QStyledItemDelegate,
+    QTableView,
+)
 
 from ..data import Track
 from ..theme import THEME
