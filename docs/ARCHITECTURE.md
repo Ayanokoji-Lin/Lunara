@@ -9,39 +9,26 @@
 
 ```
 Lunara/
-├─ main.py                  入口：QApplication、Fusion 样式、QSS 注入、字体
+├─ main.py                  入口：QApplication、Fusion、QSS、字体、WebEngine 前置设置
 ├─ requirements.txt
 ├─ lunara/
-│  ├─ theme.py              THEME 令牌（暗/亮）+ 全局 QSS 模板 + METRICS
-│  ├─ assets.py             程序化封面生成、圆角/裁切、QGraphicsBlurEffect 离线模糊
+│  ├─ theme.py              THEME 令牌 + 全局 QSS 模板 + METRICS
+│  ├─ assets.py             程序化「月牙」封面（空态）、圆角/裁切、离线模糊
 │  ├─ data.py               Track / Playlist 数据类 + 演示曲库 + 歌词
-│  ├─ main_window.py        无边框主窗口，四模块装配、导航历史、快捷键
+│  ├─ main_window.py        无边框主窗口、四模块装配、导航、异步数据接线
 │  ├─ core/player.py        播放内核（虚拟时钟，可平滑替换为 QMediaPlayer）
-│  ├─ widgets/
-│  │  ├─ icons.py           qtawesome 封装 + 无依赖降级
-│  │  ├─ common.py          IconButton / SectionHeader / Chip / 多行文本绘制
-│  │  ├─ cover.py           CoverArt、CoverCard（自绘卡片）、ShadowBox
-│  │  ├─ banner.py          BannerCarousel（淡入淡出 + 渐变遮罩）
-│  │  ├─ sidebar.py         LogoMark、SidebarItem（3px 指示条）、折叠分组
-│  │  ├─ topbar.py          搜索框、用户区、窗口控制、startSystemMove 拖动
-│  │  ├─ player_bar.py      80px 播放栏
-│  │  ├─ seek_slider.py     可点击跳转的 QSlider
-│  │  ├─ vinyl.py           VinylDisc（QPropertyAnimation 旋转）
-│  │  ├─ lyrics.py          LyricView（平滑居中滚动）
-│  │  ├─ track_table.py     TrackModel + TrackDelegate + TrackTable
-│  │  ├─ toggle.py          Switch（胶囊开关，滑块动画）
-│  │  ├─ wave.py            WaveBars（跳动音波）
-│  │  ├─ progress.py        ThinProgress（细进度条 + 下载流光）
-│  │  └─ starfield.py       StarField（星光粒子）
-│  └─ pages/
-│     ├─ base.py            BasePage（自适应版心 + QScrollArea）、EmptyPage
-│     ├─ home.py            首页：Banner + 推荐歌单网格 + 新歌速递
-│     ├─ playlist.py        歌单详情：信息头 + 歌曲表
-│     ├─ now_playing.py     播放页：三模式（唱片/纯歌词/纯封面）
-│     ├─ search.py          搜索：Tab + 单曲列表 / 网格
-│     ├─ download.py        本地下载：任务行 + 筛选 + 批量控制
-│     └─ settings.py        设置：左导航 + QStackedWidget
-└─ tools/shoot.py           离屏截图脚本（视觉走查用）
+│  ├─ api/                  eapi 组包、异步请求层、接口模块与 pydantic 模型
+│  ├─ services/             直链决策、登录态、封面、歌词解析、模型适配、异步桥
+│  ├─ store/                TTLCache、AsyncSingleFlight
+│  ├─ widgets/              icons / common / cover / banner / sidebar / topbar /
+│  │                        player_bar / seek_slider / vinyl / lyrics / track_table /
+│  │                        toggle / wave / progress / starfield
+│  └─ pages/                base / home / playlist / now_playing / search /
+│                           download / settings
+├─ tests/                   单测 + tests/fixtures 真实回包
+├─ tools/                   探针（probe_*）、验收（demo_* / verify_* / smoke_*）、截图
+├─ docs/                    ARCHITECTURE / API-PLAN / UI-INTEGRATION-PLAN
+└─ shots/                   各阶段验收截图
 ```
 
 ---
@@ -77,8 +64,11 @@ MainWindow(QWidget, 无边框)
 | `CoverCard` | 一张封面卡（自绘，无子控件） | `clicked / playClicked` |
 | `TrackTable` | 歌曲列表（Model/View） | `trackActivated(Track)` |
 | `DownloadPage` | 下载任务总览与操作 | `set_filter`、`DownloadRow.action` |
-| `assets` | 图像生成与模糊（纯函数 + 缓存） | `cover_pixmap / blurred_background` |
+| `assets` | 程序化封面（空态）与模糊（纯函数 + 缓存） | `cover_pixmap / blurred_background` |
 | `theme` | 令牌与 QSS（`string.Template` 注入） | `qss()` |
+| `services.catalog` | 接口模型 → `Track`/`Playlist`（UI 唯一数据入口） | `to_track / to_playlist / split_user_playlists` |
+| `services.covers` | 封面下载与缓存，拿不到返回 `None` 由控件回落 | `covers().pixmap(seed, url)` |
+| `services.player_url` | 直链决策（官方 → GD），产出 `ResolveOutcome` | `PlayerUrlService.resolve()` |
 
 ### 信号流向
 
@@ -93,7 +83,8 @@ Player.playingChanged ──→ VinylDisc.start/stop + 播放键图标
 Player.likeChanged ─────→ 喜欢按钮颜色
 ```
 
-单向依赖：**UI → Player → data**。页面之间不互相引用，全部通过 `MainWindow` 路由。
+单向依赖：**UI → Player / services → api**，页面之间不互相引用，全部通过 `MainWindow` 路由。
+`Player` 只负责播放状态；歌曲与歌单数据的来源是 `services`（未登录时回落 `data.py` 的演示数据）。
 
 ---
 
@@ -305,10 +296,17 @@ def paintEvent(self, event):
 
 ---
 
-## 8. 下一步
+## 8. 现状与下一步
 
-- **接入真实音频**：`Player._tick` 换成 `QMediaPlayer.positionChanged`，`toggle/seek` 转发到播放器；`Player` 的对外信号保持不变，UI 零改动。
+已完成：真实数据（首页 / 歌单 / 搜索 / 歌词 / 封面）、账号登录与「我的歌单」。
+数据层的设计与验证记录见 `docs/API-PLAN.md`，接线排期见 `docs/UI-INTEGRATION-PLAN.md`。
+
+- **接入真实音频**：`Player._tick` 换成 `QMediaPlayer.positionChanged`，`toggle/seek` 转发到播放器；
+  `Player` 的对外信号保持不变，UI 零改动。直链已由 `services/player_url` 备好。
+- **真实下载**：`services/download.py`（流式 + Range 断点续传 + SQLite 任务表），
+  替换 `pages/download.py` 里的 `QTimer` 模拟。
+- **歌手页 / 专辑页**：搜索结果里这两类卡片现在只是占位点击，详情接口还没实测。
 - **曲库落库**：`data.py` 换成 SQLite + `mutagen` 读标签，扫描本地目录。
-- **封面缓存**：`assets` 目前是进程内 dict，长期可换 `QPixmapCache`（有容量上限）+ 磁盘缩略图。
 - **亮色主题**：`LIGHT` 已备好，`qss(LIGHT)` + `repolish` 即可切换，但 `assets` 里的深空渐变需要按主题调整亮度。
-- **打包**：`pyinstaller --noconsole --add-data` 注意把 qtawesome 的字体文件一起打进去。
+- **打包**：`pyinstaller --noconsole --add-data` 要把 qtawesome 字体一起打进去；
+  带登录功能还需把 QtWebEngine 的 `resources/` 一起打。

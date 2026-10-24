@@ -1,6 +1,6 @@
 # Lunara · UI 功能落地计划
 
-> 前提：数据层（api / services / store）已完成并通过 85 项单测 + 5 项真机冒烟。
+> 前提：数据层（api / services / store）已完成，当前 145 项单测 + 5 项真机冒烟通过。
 > 本文件回答一个问题：**怎么把 UI 上每一个按钮接到真实数据上**，且不重画界面。
 > 歌词与封面确定走官方接口，不接 GD Studio 的 `lyric` / `pic`。
 
@@ -26,20 +26,20 @@
 | 首页 | 新歌速递 5 张 | `TRACKS[:5]` | `/api/personalized/newsong` | ✅ 已实测 |
 | 歌单详情 | 封面/标题/作者/播放量/描述 | `PLAYLISTS[0]` | `/api/v6/playlist/detail` | ✅ 已实测 |
 | 歌单详情 | 曲目列表 | `playlist.tracks` | 同上（`playlist.tracks`） | ✅ 已实测 |
-| 歌单详情 | 收藏 / 下载 | 无逻辑 / 跳页 | `/api/playlist/subscribe` | ⚠️ 需登录 |
+| 歌单详情 | 收藏 / 下载 | 无逻辑 / 跳页 | `/api/playlist/subscribe` | ⬜ 未接（同上） |
 | 搜索 | 单曲 | 本地过滤 | `cloudsearch` type=1 | ✅ 已实测 |
 | 搜索 | 歌手 | 本地去重 | `cloudsearch` type=100 | ✅ 已实测 |
 | 搜索 | 专辑 | 本地去重 | `cloudsearch` type=10 | ✅ 已实测 |
 | 搜索 | 歌单 | 本地过滤 | `cloudsearch` type=1000 | ✅ 已实测 |
 | 播放页 | 歌词 | `LYRICS` 固定 | `/api/song/lyric` | ✅ 已实测（LRC 文本） |
-| 播放页 | 喜欢 | 内存 set | `/api/like` | ⚠️ 需登录 |
+| 播放页 | 喜欢 | 内存 set | `/api/like` | ⬜ 未接（登录已就绪，写接口待实测） |
 | 播放栏 | 播放/进度/音量 | 虚拟时钟 | `player_url` 服务 + QMediaPlayer | ✅ 直链已就绪 |
-| 侧栏 | 我喜欢的音乐 | mock 8 首 | `/api/song/like`（`uid`） | ⚠️ 需登录 |
-| 侧栏 | 我的歌单 | 静态 3 组名 | `/api/user/playlist` | ⚠️ 需登录（匿名可查他人） |
+| 侧栏 | 我喜欢的音乐 | 真实歌单（456 首） | 走 `specialType=5` 歌单，不用 `/api/song/like` | ✅ 已实测 |
+| 侧栏 | 我的歌单 | 真实分组（创建 / 收藏） | `/api/user/playlist` | ✅ 已实测 |
 | 下载页 | 任务/进度/暂停 | `QTimer` 模拟 | 直链 + HTTP 流式下载 | ✅ 直链已就绪 |
-| 设置 | 音质偏好 | 4 档下拉 | 映射 `QualityLevel` | ✅ 4 档正好对上 |
+| 设置 | 音质偏好 | 4 档下拉（只是 UI） | 映射 `QualityLevel` | ⬜ 未接（4 档正好对上，改动很小） |
 
-实测命令：`tools/probe_ui_api.py`（2026-10-24，匿名 Cookie，全部 code=200）。
+实测命令：`tools/probe_ui_api.py`（匿名）与 `tools/probe_account_api.py`（登录态）。
 
 ---
 
@@ -47,7 +47,7 @@
 
 | 阶段 | 状态 | 验收方式 |
 |---|---|---|
-| P0 适配层 | ✅ 完成 | 109 项单测（含 3 组真实夹具） |
+| P0 适配层 | ✅ 完成 | 适配层单测全绿（13 组真实回包夹具，当前共 145 项） |
 | P1 首页 | ✅ 完成 | `tools/verify_ui_live.py` 打出 10 张真实歌单 + 5 首新歌 |
 | P2 歌单详情 | ✅ 完成 | 同一脚本打开热歌榜，200 首真实曲目 |
 | P3 搜索四类 | ✅ 完成 | 四个 Tab 全部真实结果（30 单曲 / 20 歌手 / 20 专辑 / 20 歌单） |
@@ -56,7 +56,7 @@
 | P5a 登录 | ✅ 完成 | 内嵌浏览器登录 → 抓 Cookie → DPAPI 加密落盘 |
 | P5b 我的音乐 | ✅ 完成 | 侧栏 6 个真实歌单；「我喜欢的音乐」456 首 |
 | P6 下载 | ⬜ | 真实文件落盘 + 断点续传 |
-| P7 收尾 | ⬜ | `README-api.md` |
+| P7 收尾 | ⬜ | 统一错误提示 + 音质偏好接线 + 缓存预热 |
 
 ### P0 · 适配层与模块（无 UI 改动）✅
 
@@ -104,8 +104,8 @@
 **实测**：搜「周杰伦」→ 单曲 30 / 歌手 20 / 专辑 20 / 歌单 20，四类都有真实数据，
 截图 `shots/14_search_songs.png`、`15_search_artists.png`。
 
-**已知缺口**：歌手页 / 专辑页还没有，卡片点击暂时播当前结果的第一首（占位），
-P5 之后再补两个详情页。
+**已知缺口**：歌手页 / 专辑页还没有，卡片点击暂时播当前结果的第一首（占位）。
+这两个详情接口尚未实测，等做它们时再补。
 
 ### P3.5 · 真实封面 ✅
 
@@ -202,9 +202,11 @@ DeferredDelete 前仍留在视口里——换歌词瞬间会看到「两列歌�
 
 ### P7 · 收尾（1 轮）
 
-- `docs/README-api.md`：架构、错误码、音质映射、环境变量、新增 Provider 指引。
-- 统一错误呈现：`ApiError` → 页面顶部细条提示（复用现有 `BodyText` 样式），不弹窗。
-- 缓存预热：启动时并发拉首页两个接口，进页面即命中。
+- **音质偏好接线**：设置页那 4 档下拉 → `QualityLevel`，播放时传给 `PlayerUrlService`。
+- **统一错误呈现**：`ApiError` → 页面顶部细条提示（复用现有 `BodyText` 样式），不弹窗。
+- **缓存预热**：启动时并发拉首页两个接口，进页面即命中（现在已经是启动即拉，只差失败重试）。
+
+> 文档不再单独写 `README-api.md`：数据层记录在 `docs/API-PLAN.md`，接线记录在本文，架构在 `docs/ARCHITECTURE.md`。
 
 ---
 
@@ -212,9 +214,9 @@ DeferredDelete 前仍留在视口里——换歌词瞬间会看到「两列歌�
 
 | 议题 | 决定 | 理由 |
 |---|---|---|
-| 封面图 | 先用程序化封面，`hue` 由歌曲/歌单 id 派生 | 不动 UI；真实图后续给 `CoverArt.set_pixmap()` 加一条即可 |
+| 封面图 | **真实图优先**（`services/covers.py` 下载 + 磁盘缓存），月牙只做空态 | 已落地：`CoverArt` / `CoverCard` / `VinylDisc` 都收 `cover_url` |
 | 歌词 | 官方 `/api/song/lyric` 的 `lrc.lyric`，解析成本地 `(ms, text)` | 与 `LyricView` 现有入参完全一致 |
-| 分页 | 搜索先做「首屏 30 条」，滚动加载放 P3 之后 | 先让功能成立，再谈体验 |
+| 分页 | 搜索只做「首屏 30 条」，滚动加载还没做 | 目前够用；要做时只需给 `SearchPage` 加「加载更多」 |
 | 播放失败 | `available=False` 但有 `fallback` → 播试听并标注；都没有 → 跳过并提示 | 与 `ResolveOutcome` 语义一致 |
 | 缓存 | 列表 5min / 详情 10min / 直链 `min(expi-120, 900)` | 已在 store 层实现，页面不用管 |
 | 线程 | 所有请求走 `QtAsyncBridge`，回调在主线程 | 避免 UI 线程阻塞 |
@@ -250,9 +252,12 @@ P5a 新增 services/secret_store.py（DPAPI / AES-GCM）                      �
      改动 pages/settings.py（+账号页）  main_window.py（登录态联动）          ✅
      改动 main.py（AA_ShareOpenGLContexts + 代理桥接）                       ✅
      测试 tests/{test_secret_store,test_account}.py + tools/smoke_login.py   ✅
-P5b 改动 widgets/sidebar.py（+set_my_playlists）  main_window.py（登录后重拉）
+P5b 改动 widgets/sidebar.py（+set_my_playlists）  main_window.py（登录后重拉）  ✅
+     新增 api/models/user.py（UserPlaylist）+ modules/user.get_user_playlists     ✅
+     改动 services/catalog.py（split_user_playlists）  api/models/playlist.py（容忍 null）✅
+     测试 tests/test_catalog.py 补 3 项  tools/verify_account_ui.py                 ✅
 P6 新增  services/download.py  改动 pages/download.py（模拟 → 真实）
-P7 新增  docs/README-api.md
+P7 改动  pages/settings.py（音质下拉接 QualityLevel）  main_window.py（错误提示条）
 ```
 
 > 每个阶段都只「加方法 / 换内部实现」，不改布局与样式表。
@@ -285,7 +290,7 @@ P7 新增  docs/README-api.md
 
 ## 7. 建议的执行顺序
 
-P5（浏览器登录 + 我的音乐）→ P6（下载）→ P7（收尾）；
-音频替换等 P5 完成后再单独一轮，那时「会员态 + 直链 + 队列」都已是真数据，换内核风险最低。
+P6（下载）→ 音频替换（单独一轮）→ 收尾。
+P5 已完成，「会员态 + 直链 + 队列」都已是真数据，现在换播放内核的风险最低。
 
-如果只有一轮时间：做 P5 的「登录 + Cookie 落盘」，它解锁侧栏和喜欢功能，是剩下最大的一块。
+如果只有一轮时间：做 P6 的「流式下载 + 断点续传」，下载页是最后一块演示态。
