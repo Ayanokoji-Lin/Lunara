@@ -41,6 +41,7 @@ from .api.modules.search import (
 from .core.player import Player
 from .data import PLAYLISTS, TRACKS, Playlist, Track, demo_playlist, is_demo_playlist
 from .pages.grid import GridPage
+from .widgets.anim import fade_in
 from .pages.download import DownloadPage
 from .pages.home import HomePage
 from .pages.now_playing import NowPlayingPage
@@ -294,7 +295,13 @@ class MainWindow(QWidget):
 
     # ================= 导航 =================
     def _show(self, index: int, record: bool = True) -> None:
+        changed = self.stack.currentIndex() != index
         self.stack.setCurrentIndex(index)
+        if changed:
+            page = self.stack.currentWidget()
+            if page is not None:
+                # 从 45% 淡入：整页从黑里浮出来，比硬切干净；160ms 结束即摘 effect
+                fade_in(page, duration=160, start=0.45)
         if not record:
             return
         if self._hpos < len(self._history) - 1:
@@ -788,218 +795,6 @@ class MainWindow(QWidget):
         if self._tray.isSystemTrayAvailable():
             self._tray.showMessage(title, body, QSystemTrayIcon.MessageIcon.Information, 4000)
 
-    def _on_download_finished(self, task) -> None:
-        """下载完成后补写封面与歌词文件（同目录、同名）。"""
-        self._notify("下载完成", f"{task.track.title} — {task.track.artist}")
-        if not self._settings.get("save_sidecar", True):
-            return
-        self._bridge.submit(
-            self._write_sidecar(task),
-            on_success=lambda _: None,
-            on_error=lambda _exc: None,
-        )
-
-    async def _write_sidecar(self, task) -> None:
-        base = Path(task.file_path).with_suffix("")
-        cover_url = task.track.cover_url
-        if cover_url and not base.with_suffix(".jpg").exists():
-            try:
-                async with httpx.AsyncClient(timeout=15, follow_redirects=True) as client:
-                    response = await client.get(cover_url)
-                if response.status_code == 200:
-                    base.with_suffix(".jpg").write_bytes(response.content)
-            except (httpx.HTTPError, OSError):
-                pass
-
-        lrc = base.with_suffix(".lrc")
-        if not lrc.exists():
-            try:
-                lyric = await get_lyric(get_client(), task.track.id)
-            except Exception:  # noqa: BLE001
-                return
-            if lyric.text:
-                lrc.write_text(lyric.text, encoding="utf-8")
-
-    def _restore_session(self) -> None:
-        """上次退出时的音量、倍速、队列（不开播）。"""
-        self.player.set_volume(int(self._settings.get("volume", self.player.volume)))
-        self.player.set_rate(float(self._settings.get("playback_rate", 1.0)))
-        self.now_playing.set_lyric_offset(int(self._settings.get("lyric_offset", 0)))
-        self.now_playing.set_lyric_offset(int(self._settings.get("lyric_offset", 0)))
-        self._apply_sleep(int(self._settings.get("sleep_minutes", 0)))
-
-        tracks, index = queue_store.load()
-        if tracks:
-            self.player.set_queue(tracks, index, autoplay=False)
-            self.playlist_page.table.set_tracks(tracks)
-
-    def _apply_sleep(self, minutes: int) -> None:
-        self._sleep_timer.stop()
-        if minutes > 0:
-            self._sleep_timer.start(minutes * 60 * 1000)
-            self.banner.show_message(f"{minutes} 分钟后自动暂停", level="info",
-                                     timeout_ms=3000)
-
-    def _on_sleep_timeout(self) -> None:
-        if self.player.is_playing:
-            self.player.pause()
-        self.banner.show_message("睡眠定时器到点，已暂停播放", level="info", timeout_ms=5000)
-
-    def _on_play_next(self, track: Track) -> None:
-        self.player.insert_next(track)
-        self.banner.show_message(f"下一首播放：{track.title}", level="info", timeout_ms=3000)
-
-    def _on_like_many(self, tracks: list[Track]) -> None:
-        if not tracks:
-            return
-        self._bridge.submit(
-            self._like_many(tracks),
-            on_success=lambda n: self.banner.show_message(
-                f"已喜欢 {n} 首", level="info", timeout_ms=3000),
-            on_error=lambda exc: self._show_error(f"批量喜欢失败：{error_text(exc)}"),
-        )
-
-    async def _like_many(self, tracks: list[Track]) -> int:
-        client = get_client()
-        done = 0
-        for track in tracks:
-            try:
-                await like_song(client, track.id, True)
-            except Exception:  # noqa: BLE001 - 单首失败不影响其余
-                continue
-            self._liked_ids.add(track.id)
-            done += 1
-        return done
-
-    def _on_queue_append(self, track: Track) -> None:
-        self.player.queue.append(track)
-        self.banner.show_message(f"已加到队列末尾：{track.title}", level="info", timeout_ms=3000)
-
-    def _reload_current_quality(self) -> None:
-        """换音质后重新解析当前曲目，并回到原来的位置。"""
-        track = self.player.current
-        if track is None or not track.remote or not self.player.is_playing:
-            return
-        position = self.player.position
-        self.player.play_track(track, self.player.queue)
-        QTimer.singleShot(1200, lambda: self.player.seek(position))
-
-    def _remember_volume(self, volume: int) -> None:
-        if self._settings.get("volume") != volume:
-            self._settings.set("volume", int(volume))
-
-    def _save_queue(self) -> None:
-        queue_store.save(list(self.player.queue), self.player.index)
-
-    def _build_tray_menu(self):
-        from PyQt6.QtWidgets import QMenu
-
-        menu = QMenu(self)
-        menu.addAction("显示主窗口", self._show_from_tray)
-        menu.addSeparator()
-        menu.addAction("播放 / 暂停", self.player.toggle)
-        menu.addAction("上一首", self.player.prev_track)
-        menu.addAction("下一首", self.player.next_track)
-        menu.addSeparator()
-        menu.addAction("退出 Lunara", self._quit_from_tray)
-        return menu
-
-    def _on_tray_activated(self, reason) -> None:
-        if reason in (QSystemTrayIcon.ActivationReason.Trigger,
-                      QSystemTrayIcon.ActivationReason.DoubleClick):
-            self._show_from_tray()
-
-    def _show_from_tray(self) -> None:
-        self.showNormal()
-        self.raise_()
-        self.activateWindow()
-
-    def _quit_from_tray(self) -> None:
-        self._close_to_tray = False
-        self._tray.hide()
-        self.close()
-
-    def _restore_geometry(self) -> None:
-        raw = self._settings.get("window_geometry")
-        if not raw:
-            return
-        try:
-            from PyQt6.QtCore import QByteArray
-
-            self.restoreGeometry(QByteArray.fromBase64(str(raw).encode("ascii")))
-        except (TypeError, ValueError):
-            pass
-
-    def _save_geometry(self) -> None:
-        try:
-            data = bytes(self.saveGeometry().toBase64()).decode("ascii")
-        except (AttributeError, ValueError):
-            return
-        self._settings.set("window_geometry", data)
-
-    def _apply_download_limits(self) -> None:
-        self._downloads.set_limits(
-            retries=int(self._settings.get("dl_retries", 3)),
-            speed_kbps=int(self._settings.get("dl_speed_kbps", 0)),
-        )
-
-    def _import_existing_files(self) -> None:
-        """把下载目录里已有、但任务表没登记的文件补进来（重启后也能看到）。"""
-        try:
-            tracks = scan(self._settings.download_dir)
-        except Exception:  # noqa: BLE001 - 扫描失败不该影响启动
-            return
-        if not tracks:
-            return
-        tasks = [
-            DownloadTask(id=0, track=track, file_path=track.path, state="done",
-                         bytes_done=Path(track.path).stat().st_size,
-                         bytes_total=Path(track.path).stat().st_size)
-            for track in tracks
-        ]
-        added = self._downloads.import_done(tasks)
-        if added:
-            self.banner.show_message(f"已把 {added} 个本地文件登记进下载列表",
-                                     level="info", timeout_ms=4000)
-
-    def _notify(self, title: str, body: str) -> None:
-        if not self._settings.notify_on_complete:
-            return
-        if self._tray.isSystemTrayAvailable():
-            self._tray.showMessage(title, body, QSystemTrayIcon.MessageIcon.Information, 4000)
-
-    def _on_download_finished(self, task) -> None:
-        """下载完成后补写封面与歌词文件（同目录、同名）。"""
-        self._notify("下载完成", f"{task.track.title} — {task.track.artist}")
-        if not self._settings.get("save_sidecar", True):
-            return
-        self._bridge.submit(
-            self._write_sidecar(task),
-            on_success=lambda _: None,
-            on_error=lambda _exc: None,
-        )
-
-    async def _write_sidecar(self, task) -> None:
-        base = Path(task.file_path).with_suffix("")
-        cover_url = task.track.cover_url
-        if cover_url and not base.with_suffix(".jpg").exists():
-            try:
-                async with httpx.AsyncClient(timeout=15, follow_redirects=True) as client:
-                    response = await client.get(cover_url)
-                if response.status_code == 200:
-                    base.with_suffix(".jpg").write_bytes(response.content)
-            except (httpx.HTTPError, OSError):
-                pass
-
-        lrc = base.with_suffix(".lrc")
-        if not lrc.exists():
-            try:
-                lyric = await get_lyric(get_client(), task.track.id)
-            except Exception:  # noqa: BLE001
-                return
-            if lyric.text:
-                lrc.write_text(lyric.text, encoding="utf-8")
-
     def _restore_session(self) -> None:
         """上次退出时的音量、倍速、队列（不开播）。"""
         self.player.set_volume(int(self._settings.get("volume", self.player.volume)))
@@ -1098,11 +893,6 @@ class MainWindow(QWidget):
             return
         self.banner.show_message(f"《{task.track.title}》下载完成", level="info",
                                  timeout_ms=4000)
-
-    def _on_theme_changed(self, name: str) -> None:
-        label = "月光白" if name == "light" else "深空"
-        self.banner.show_message(f"已切换到{label}主题，重启应用后生效",
-                                 level="info", timeout_ms=5000)
 
     def _on_theme_changed(self, name: str) -> None:
         label = "月光白" if name == "light" else "深空"

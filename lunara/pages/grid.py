@@ -9,6 +9,7 @@ from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtWidgets import QGridLayout, QLabel, QVBoxLayout, QWidget
 
 from ..services.catalog import CardItem
+from ..widgets.anim import detach, stagger
 from ..widgets.cover import CoverCard
 from .base import BasePage
 
@@ -67,6 +68,7 @@ class GridPage(BasePage):
             item = self._grid.takeAt(0)
             widget = item.widget()
             if widget is not None:
+                detach(widget)
                 widget.hide()
                 widget.setParent(None)
                 widget.deleteLater()
@@ -82,3 +84,5 @@ class GridPage(BasePage):
             card.playClicked.connect(lambda seed=item.seed: self.cardActivated.emit(seed))
             self._grid.addWidget(card, i // self.COLS, i % self.COLS)
             self._cards.append(card)
+
+        stagger(self._cards, step=16, duration=220, limit=20)

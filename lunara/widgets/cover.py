@@ -14,6 +14,7 @@ from PyQt6.QtWidgets import QWidget
 from ..assets import cover_pixmap, crop_fill, rounded
 from ..services.covers import covers
 from ..theme import THEME
+from .anim import HoverTween
 from .common import draw_wrapped, font
 from .icons import pixmap
 
@@ -98,6 +99,7 @@ class CoverCard(QWidget):
         self._round = round_cover
         self._cover_url = cover_url
         self._hover = False
+        self._hover_tween = HoverTween(self, duration=150)
         self._pm: QPixmap | None = None
         self._pm_size = 0
         self.setMouseTracking(True)
@@ -149,12 +151,12 @@ class CoverCard(QWidget):
     # ---- 交互 ----
     def enterEvent(self, e) -> None:
         self._hover = True
-        self.update()
+        self._hover_tween.to(1.0)
         super().enterEvent(e)
 
     def leaveEvent(self, e) -> None:
         self._hover = False
-        self.update()
+        self._hover_tween.to(0.0)
         super().leaveEvent(e)
 
     def mouseReleaseEvent(self, e) -> None:
@@ -177,29 +179,37 @@ class CoverCard(QWidget):
         p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
         p.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform, True)
 
-        cover = QRectF(0, 0, w, w)
+        t = self._hover_tween.value
+        # 悬停放大：绘制区往外扩 3px 再裁掉，视觉上是「封面轻微推近」
+        grow = 3.0 * t
+        cover = QRectF(-grow, -grow, w + grow * 2, w + grow * 2)
+        clip = QRectF(0, 0, w, w)
+        p.setClipRect(clip)
         pm = self._cover()
         if self._round:
             path = QPainterPath()
-            path.addEllipse(cover)
+            path.addEllipse(clip)
             p.setClipPath(path)
         p.drawPixmap(cover, pm, QRectF(pm.rect()))
         p.setClipping(False)
 
-        # 悬停：压暗 + 主色播放按钮
-        if self._hover:
+        # 悬停：压暗 + 主色播放按钮（按进度插值，避免生硬跳变）
+        if t > 0.01:
             p.setPen(Qt.PenStyle.NoPen)
-            p.setBrush(QColor(0, 0, 0, 90))
+            p.setBrush(QColor(0, 0, 0, int(90 * t)))
             if self._round:
-                p.drawEllipse(cover)
+                p.drawEllipse(clip)
             else:
-                p.drawRoundedRect(cover, 6, 6)
+                p.drawRoundedRect(clip, 6, 6)
             cx, cy = w / 2, w / 2
+            p.setOpacity(min(1.0, t * 1.4))
             p.setBrush(QColor(THEME["primary"]))
-            p.drawEllipse(QPointF(cx, cy), 22, 22)
+            radius = 14 + 8 * t
+            p.drawEllipse(QPointF(cx, cy), radius, radius)
             ico = pixmap("fa5s.play", "#FFFFFF", 15)
             p.drawPixmap(QRectF(cx - 7.5, cy - 7.5, 15, 15), ico,
                          QRectF(ico.rect()))
+            p.setOpacity(1.0)
 
         # 播放量胶囊
         if self._plays:

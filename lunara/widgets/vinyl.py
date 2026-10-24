@@ -39,6 +39,7 @@ class VinylDisc(QWidget):
         self._d = diameter
         self._compact = compact
         self._angle = 0.0
+        self._disc: QPixmap | None = None      # 盘体+纹路只画一次，逐帧只旋转封面
         self._seed = 1
         self._hue: int | None = None
         self._url = ""
@@ -97,11 +98,58 @@ class VinylDisc(QWidget):
         elif state != QAbstractAnimation.State.Running:
             self._anim.start()
 
+    def hideEvent(self, e) -> None:
+        if self._anim.state() == QAbstractAnimation.State.Running:
+            self._anim.pause()
+        super().hideEvent(e)
+
+    def showEvent(self, e) -> None:
+        if self._anim.state() == QAbstractAnimation.State.Paused:
+            self._anim.resume()
+        super().showEvent(e)
+
     def stop(self) -> None:
         if self._anim.state() == QAbstractAnimation.State.Running:
             self._anim.pause()
 
     # ---- 绘制 ----
+    def _render_disc(self) -> QPixmap:
+        """盘体 + 阴影 + 26 圈纹路：只画一次，逐帧复用。"""
+        w, h = self.width(), self.height()
+        pm = QPixmap(max(1, w), max(1, h))
+        pm.fill(Qt.GlobalColor.transparent)
+        p = QPainter(pm)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+
+        c = QPointF(w / 2, h / 2)
+        R = min(w, h) / 2 - 3
+
+        sh = QRadialGradient(QPointF(c.x(), c.y() + R * 0.10), R * 1.05)
+        sh.setColorAt(0.0, QColor(0, 0, 0, 130))
+        sh.setColorAt(0.75, QColor(0, 0, 0, 60))
+        sh.setColorAt(1.0, QColor(0, 0, 0, 0))
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(sh)
+        p.drawEllipse(QPointF(c.x(), c.y() + R * 0.06), R * 1.04, R * 1.04)
+
+        body = QRadialGradient(QPointF(c.x() - R * 0.35, c.y() - R * 0.40), R * 1.55)
+        body.setColorAt(0.0, QColor(38, 40, 56))
+        body.setColorAt(0.45, QColor(19, 21, 32))
+        body.setColorAt(1.0, QColor(7, 8, 14))
+        p.setBrush(body)
+        p.drawEllipse(c, R, R)
+
+        grooves = 26 if not self._compact else 8
+        for i in range(grooves):
+            r = R * (0.64 + i * (0.34 / max(1, grooves)))
+            pen = QPen(QColor(255, 255, 255, 7 + (i % 3) * 4))
+            pen.setWidthF(0.8)
+            p.setPen(pen)
+            p.setBrush(Qt.BrushStyle.NoBrush)
+            p.drawEllipse(c, r, r)
+        p.end()
+        return pm
+
     def paintEvent(self, _e) -> None:
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
@@ -111,32 +159,9 @@ class VinylDisc(QWidget):
         c = QPointF(w / 2, h / 2)
         R = min(w, h) / 2 - 3
 
-        # 落地阴影
-        sh = QRadialGradient(QPointF(c.x(), c.y() + R * 0.10), R * 1.05)
-        sh.setColorAt(0.0, QColor(0, 0, 0, 130))
-        sh.setColorAt(0.75, QColor(0, 0, 0, 60))
-        sh.setColorAt(1.0, QColor(0, 0, 0, 0))
-        p.setPen(Qt.PenStyle.NoPen)
-        p.setBrush(sh)
-        p.drawEllipse(QPointF(c.x(), c.y() + R * 0.06), R * 1.04, R * 1.04)
-
-        # 盘体
-        body = QRadialGradient(QPointF(c.x() - R * 0.35, c.y() - R * 0.40), R * 1.55)
-        body.setColorAt(0.0, QColor(38, 40, 56))
-        body.setColorAt(0.45, QColor(19, 21, 32))
-        body.setColorAt(1.0, QColor(7, 8, 14))
-        p.setBrush(body)
-        p.drawEllipse(c, R, R)
-
-        # 纹路
-        grooves = 26 if not self._compact else 8
-        for i in range(grooves):
-            r = R * (0.64 + i * (0.34 / max(1, grooves)))
-            pen = QPen(QColor(255, 255, 255, 7 + (i % 3) * 4))
-            pen.setWidthF(0.8)
-            p.setPen(pen)
-            p.setBrush(Qt.BrushStyle.NoBrush)
-            p.drawEllipse(c, r, r)
+        if self._disc is None or self._disc.size() != self.size():
+            self._disc = self._render_disc()
+        p.drawPixmap(0, 0, self._disc)
 
         # 旋转部分：封面 + 内圈
         p.save()

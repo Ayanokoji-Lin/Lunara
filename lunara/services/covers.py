@@ -17,7 +17,8 @@ from pathlib import Path
 
 import httpx
 from PyQt6.QtCore import QObject, pyqtSignal
-from PyQt6.QtGui import QPixmap
+from PyQt6.QtCore import QBuffer, QByteArray, Qt
+from PyQt6.QtGui import QImageReader, QPixmap
 
 from .async_bridge import BackgroundLoop, get_loop
 
@@ -27,6 +28,7 @@ CACHE_DIR = Path(os.environ.get("APPDATA") or Path.home()) / "Lunara" / "covers"
 MAX_BYTES = 8 * 1024 * 1024
 
 #: 内存里最多留多少张（约 300 × 512px ≈ 300MB 上限，实际远小于此）
+MAX_SIDE = 512      # 封面解码上限（显示最大约 400）
 MAX_PIXMAPS = 300
 
 USER_AGENT = (
@@ -34,6 +36,29 @@ USER_AGENT = (
     "Chrome/124.0.0.0 Safari/537.36 Edg/124.0.0.0"
 )
 REFERER = "https://music.163.com/"
+
+
+def _decode(data: bytes) -> QPixmap | None:
+    """按 512px 上限解码：封面最大也就显示 400 出头，原图动辄 1000+。
+
+    ``QImageReader.setScaledSize`` 让解码器直接出小图，比「先解原图再缩放」
+    省一大半时间——列表里几十张封面首次出现时的卡顿主要来自这里。
+    """
+    # 注意：QBuffer 必须自己持有数据副本。写成 QBuffer(QByteArray(data)) 时
+    # 那个临时 QByteArray 会立刻析构，reader 读到的是野指针 —— 直接进程消失。
+    buffer = QBuffer()
+    buffer.setData(QByteArray(data))
+    buffer.open(QBuffer.OpenModeFlag.ReadOnly)
+    reader = QImageReader(buffer)
+    reader.setAutoTransform(True)
+    size = reader.size()
+    if size.isValid() and max(size.width(), size.height()) > MAX_SIDE:
+        reader.setScaledSize(size.scaled(MAX_SIDE, MAX_SIDE,
+                                         Qt.AspectRatioMode.KeepAspectRatio))
+    image = reader.read()
+    if image.isNull():
+        return None
+    return QPixmap.fromImage(image)
 
 
 class CoverService(QObject):
@@ -75,8 +100,8 @@ class CoverService(QObject):
 
         data = self._read_disk(url)
         if data is not None:
-            pixmap = QPixmap()
-            if pixmap.loadFromData(data):
+            pixmap = _decode(data)
+            if pixmap is not None:
                 self._remember(seed, pixmap)
                 return pixmap
 
@@ -139,8 +164,8 @@ class CoverService(QObject):
         self._pending.discard(seed)
         if not isinstance(data, (bytes, bytearray)):
             return
-        pixmap = QPixmap()
-        if pixmap.loadFromData(bytes(data)):
+        pixmap = _decode(bytes(data))
+        if pixmap is not None:
             self._remember(seed, pixmap)
             self.ready.emit(seed)
 

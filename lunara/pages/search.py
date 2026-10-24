@@ -24,6 +24,7 @@ from ..api.modules.search import SearchKind
 from ..core.player import Player
 from ..data import PLAYLISTS, TRACKS, Playlist, Track
 from ..services.catalog import CardItem, SearchPayload
+from ..widgets.anim import detach, stagger
 from ..widgets.cover import CoverCard
 from ..widgets.track_table import TrackTable
 from .base import BasePage
@@ -312,6 +313,7 @@ class SearchPage(BasePage):
             item = self.grid_layout.takeAt(0)
             w = item.widget()
             if w is not None:
+                detach(w)
                 w.hide()
                 w.setParent(None)
                 w.deleteLater()

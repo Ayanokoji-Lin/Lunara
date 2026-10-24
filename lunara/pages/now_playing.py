@@ -28,6 +28,7 @@ from ..data import LYRICS, Track
 from ..theme import THEME, qcolor
 from ..widgets.common import IconButton, font
 from ..widgets.cover import CoverArt, ShadowBox
+from ..widgets.anim import fade_in
 from ..widgets.lyrics import LyricView
 from ..widgets.starfield import StarField
 from ..widgets.vinyl import VinylDisc
@@ -176,7 +177,12 @@ class NowPlayingPage(QWidget):
     # ---------------- 模式 ----------------
     def set_mode(self, index: int) -> None:
         index = max(0, min(index, self.stack.count() - 1))
+        changed = self.stack.currentIndex() != index
         self.stack.setCurrentIndex(index)
+        if changed:
+            page = self.stack.currentWidget()
+            if page is not None:
+                fade_in(page, duration=150, start=0.4)
         for i, b in enumerate(self._mode_btns):
             b.setChecked(i == index)
         if index == 0 and self.player.is_playing:
@@ -214,6 +220,18 @@ class NowPlayingPage(QWidget):
         self._sync_like()
         self._bg_key = None
         self._bg_timer.start()
+        # 封面从 30% 淡入，切歌不再是硬切；160ms 后自动摘掉 effect
+        fade_in(self.cover_big, duration=160, start=0.3)
+        # 封面从 30% 淡入，切歌不再是硬切；160ms 后自动摘掉 effect
+        fade_in(self.cover_big, duration=160, start=0.3)
+
+    def hideEvent(self, e) -> None:
+        self._bg_timer.stop()
+        super().hideEvent(e)
+
+    def hideEvent(self, e) -> None:
+        self._bg_timer.stop()
+        super().hideEvent(e)
 
     def _on_position(self, pos: int, _dur: int) -> None:
         self.lyric1.set_position(pos)
@@ -266,3 +284,7 @@ class NowPlayingPage(QWidget):
         if self._bg.pixmap() and not self._bg.pixmap().isNull():
             self._bg_key = None
             self._bg_timer.start()
+        # 封面从 30% 淡入，切歌不再是硬切；160ms 后自动摘掉 effect
+        fade_in(self.cover_big, duration=160, start=0.3)
+        # 封面从 30% 淡入，切歌不再是硬切；160ms 后自动摘掉 effect
+        fade_in(self.cover_big, duration=160, start=0.3)

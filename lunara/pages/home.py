@@ -13,6 +13,7 @@ from ..core.player import Player
 from ..data import BANNERS, PLAYLISTS, TRACKS, Playlist, Track
 from ..widgets.banner import BannerCarousel
 from ..widgets.common import SectionHeader
+from ..widgets.anim import detach, stagger
 from ..widgets.cover import CoverCard
 from .base import BasePage
 
@@ -23,6 +24,10 @@ def _clear(layout: QVBoxLayout) -> None:
         item = layout.takeAt(0)
         widget = item.widget()
         if widget is not None:
+            # 卡片可能还在淡入，先停动画摘 effect，再销毁（否则 Qt 段错误）
+            for child in widget.findChildren(QWidget):
+                detach(child)
+            detach(widget)
             widget.hide()
             widget.setParent(None)
             widget.deleteLater()
@@ -114,16 +119,19 @@ class HomePage(BasePage):
         for c in range(self.COLS):
             grid.setColumnStretch(c, 1)
 
+        cards: list[CoverCard] = []
         for i, pl in enumerate(self._playlists):
             card = CoverCard(pl.id, pl.hue, pl.title, pl.author, pl.plays_text,
                              cover_url=pl.cover_url)
             card.clicked.connect(lambda pid=pl.id: self.playlistActivated.emit(pid))
             card.playClicked.connect(lambda pid=pl.id: self.playlistActivated.emit(pid))
             grid.addWidget(card, i // self.COLS, i % self.COLS)
+            cards.append(card)
 
         wrap = QWidget()
         wrap.setLayout(grid)
         self._pl_layout.addWidget(wrap)
+        stagger(cards, step=16, duration=220, limit=20)
 
     def _rebuild_songs(self) -> None:
         _clear(self._song_layout)
@@ -135,16 +143,19 @@ class HomePage(BasePage):
             grid.setColumnStretch(c, 1)
 
         queue = list(self._new_songs)
+        cards: list[CoverCard] = []
         for i, track in enumerate(queue[: self.COLS]):
             card = CoverCard(track.seed, track.hue, track.title, track.artist, "",
                              cover_url=track.cover_url)
             card.clicked.connect(lambda tr=track: self.player.play_track(tr, queue))
             card.playClicked.connect(lambda tr=track: self.player.play_track(tr, queue))
             grid.addWidget(card, 0, i)
+            cards.append(card)
 
         wrap = QWidget()
         wrap.setLayout(grid)
         self._song_layout.addWidget(wrap)
+        stagger(cards, step=16, duration=220, limit=20)
 
     def _on_banner(self, index: int) -> None:
         if 0 <= index < len(self._playlists):
