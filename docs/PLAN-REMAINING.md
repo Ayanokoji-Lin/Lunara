@@ -8,7 +8,7 @@
 | P10 | 搜索分页（加载更多） | ✅ 完成 | 低 |
 | P11 | 本地播放（下载完的文件直接放） | ✅ 完成 | 低 |
 | P12 | 亮色主题 | ✅ 完成（重启生效） | 已修轮播文字与播放页遮罩 |
-| P13 | 打包（PyInstaller） | 构建中 | 体积与 QtWebEngine 资源 |
+| P13 | 打包（PyInstaller） | ✅ 完成（583 MB） | 体积主要来自 QtWebEngine |
 
 ## P9 · 喜欢
 
@@ -56,4 +56,9 @@
 - 带上 qtawesome 字体与 QtWebEngine 资源
 - 产物在 `dist/Lunara/`，不提交仓库
 
-**验收**：双击 `dist/Lunara/Lunara.exe` 能起主窗口。
+**验收**：`tools/build.py` 跑完产出 `dist/Lunara/Lunara.exe`（整个目录 583 MB，3 分 17 秒）；
+直接启动 exe，进程正常起来并成功请求了登录态 / 首页 / 我的歌单，说明打包后的
+资源与依赖是齐的（不只是弹个窗口）。
+
+体积说明：QtWebEngine（登录窗口用的 Chromium）本身就占大头，加上 PyQt6 的 Qt6 DLL。
+要压体积得砍掉内嵌浏览器登录，那等于砍功能，暂不处理。

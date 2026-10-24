@@ -199,6 +199,16 @@ UI 接真数据的排期与进度见 `docs/UI-INTEGRATION-PLAN.md`。
   再点一次是幂等的（服务端按 `like=true` 再确认）。
 - **本地曲库扫描**：现在只能播「下载页里已完成的文件」，还没有扫描任意目录、读标签（`mutagen`）。
 
+## 打包
+
+```bash
+.venv/Scripts/python.exe tools/build.py      # PyInstaller onedir
+dist/Lunara/Lunara.exe
+```
+
+产物在 `dist/Lunara/`（约 583 MB，主要是 QtWebEngine 的 Chromium），不入库。
+想更小可以改成 `--onedir` + 手动排除未用的 Qt 模块，或者去掉内嵌登录。
+
 ## 版本管理
 
 - 分支只有 `main`，一个阶段一个提交，消息前缀用 `feat / fix / test / docs / chore`。
